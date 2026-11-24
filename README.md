@@ -101,6 +101,23 @@ Output binary: `dist\AntigravityControlCenter\AntigravityControlCenter.exe`.
 - All state, DPAPI-encrypted account blobs (`accounts/`), quota cache (`quotas_cache.json`), SQLite history (`tokens_history.db`), and logs (`autopilot.log`, `app_crash.log`) reside locally in `%USERPROFILE%\.gemini\antigravity-switcher\`.
 - No third-party telemetry is collected; external requests go solely to Google OAuth / Antigravity quota endpoints for your enrolled accounts, and UI traffic runs strictly on `127.0.0.1:28795`.
 
+**Privacy & Transparency Note:** All account credentials are encrypted per-user locally via Windows DPAPI in `%USERPROFILE%\.gemini\antigravity-switcher\` (never uploaded), and the optional in-IDE top-bar quota indicator uses Node.js (`auto_patch_antigravity.js`) to patch Antigravity's `app.asar` locally.
+
+---
+
+## Optional Companion Tools
+
+These external tools are **not bundled** with Antigravity Control Center. The app works cleanly without them—their dedicated optimizer analytics cards appear automatically only when local telemetry is detected:
+
+- [`INK-Q/agy-fast`](https://github.com/INK-Q/agy-fast) (MIT) — Batched codebase search, outlines, multi-file edits, and concurrent checks.
+- [`mksglu/context-mode`](https://github.com/mksglu/context-mode) (Elastic License 2.0) — Sandboxed command execution and context-window compaction telemetry.
+
+---
+
+## Credits & License
+
+Built upon the original [`demusraph/antigravity-control-center`](https://github.com/demusraph/antigravity-control-center) (MIT License) by `@demusraph`. This repository is a heavily redesigned and extended version featuring token analytics, the `app.asar` top-bar watchdog, and a native installer/self-updater, released under the MIT License ([`LICENSE`](LICENSE)).
+
 ---
 
 ## Keywords
