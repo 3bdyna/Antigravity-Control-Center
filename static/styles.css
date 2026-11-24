@@ -619,6 +619,26 @@ span svg + span,
   min-width: 0;
 }
 
+.opt-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.opt-footer-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opt-footer-right {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .cm-strip {
   width: 100%;
   min-width: 0;

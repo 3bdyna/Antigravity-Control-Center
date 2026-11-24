@@ -486,10 +486,11 @@ let currentState = null;
       const afCard = document.getElementById('af-card');
       if (!grid || !cmCard || !afCard) return;
 
+      const previewNormal = new URLSearchParams(window.location.search).get('preview') === 'normal';
       const cm = optimizerCardState.contextMode;
       const af = optimizerCardState.agyFast;
-      const showContextMode = Boolean(cm && (cm.installed || cm.active || (cm.total_calls || 0) > 0));
-      const showAgyFast = Boolean(af && (af.installed || af.active || (af.total_calls || 0) > 0));
+      const showContextMode = !previewNormal && Boolean(cm && (cm.installed || cm.active || (cm.total_calls || 0) > 0));
+      const showAgyFast = !previewNormal && Boolean(af && (af.installed || af.active || (af.total_calls || 0) > 0));
       const visibleCount = (showContextMode ? 1 : 0) + (showAgyFast ? 1 : 0);
 
       cmCard.classList.toggle('opt-hidden', !showContextMode);
@@ -525,9 +526,12 @@ let currentState = null;
         if (document.getElementById('cm-total-calls')) {
           document.getElementById('cm-total-calls').innerText = fmt(d.total_calls || 0);
         }
-        if (document.getElementById('cm-calls-detail')) {
+        const cmCallsDetail = document.getElementById('cm-calls-detail');
+        if (cmCallsDetail) {
           const tools = Object.entries(d.by_tool || {}).map(([t, info]) => `${t}: ${info.calls}`).join(' · ');
-          document.getElementById('cm-calls-detail').innerText = tools || 'No intercepted calls';
+          const detailText = tools || 'No intercepted calls';
+          cmCallsDetail.innerText = detailText;
+          cmCallsDetail.title = detailText;
         }
         if (document.getElementById('cm-last-updated') && d.last_updated) {
           document.getElementById('cm-last-updated').innerText = `Last sync: ${d.last_updated}`;
@@ -590,11 +594,14 @@ let currentState = null;
           document.getElementById('af-total-calls').innerText = fmt(d.total_calls || 0);
         }
 
-        if (document.getElementById('af-calls-detail')) {
+        const afCallsDetail = document.getElementById('af-calls-detail');
+        if (afCallsDetail) {
           const tools = Object.entries(d.by_tool || {})
             .map(([t, info]) => `${AGY_FAST_SHORT_NAMES[t] || t}: ${info.calls}`)
             .join(' · ');
-          document.getElementById('af-calls-detail').innerText = tools || (d.installed ? 'Ready for batched MCP calls' : 'Plugin not installed');
+          const detailText = tools || (d.installed ? 'Ready for batched MCP calls' : 'Plugin not installed');
+          afCallsDetail.innerText = detailText;
+          afCallsDetail.title = detailText;
         }
 
         const healthEl = document.getElementById('af-health-detail');
