@@ -525,6 +525,23 @@ let currentState = null;
       return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
+    function formatShortMonth(ym, includeYear = false) {
+      if (!ym) return '--';
+      const parts = ym.split('-');
+      if (parts.length < 2) return ym;
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      const mon = dt.toLocaleDateString('en-US', { month: 'short' });
+      return includeYear ? `${mon} '${String(parts[0]).slice(-2)}` : mon;
+    }
+
+    function formatFullMonth(ym) {
+      if (!ym) return '--';
+      const parts = ym.split('-');
+      if (parts.length < 2) return ym;
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+
     function renderContextModeDaily(d) {
       const container = document.getElementById('cm-daily-bars');
       if (!container) return;
@@ -535,36 +552,90 @@ let currentState = null;
       const activeDays = d.active_days || 0;
       const peakDay = d.peak_day;
 
+      const titleEl = document.getElementById('cm-chart-title');
       const activeBadge = document.getElementById('cm-active-days-label');
-      if (activeBadge) {
-        activeBadge.innerText = totalDays > 0 ? `${activeDays}d/${totalDays}d active` : '0d active';
-      }
       const peakBadge = document.getElementById('cm-peak-day-badge');
-      if (peakBadge) {
-        peakBadge.innerText = peakDay ? `Peak: ${formatShortDay(peakDay)}` : 'Peak: --';
-      }
 
       if (daily.length === 0) {
+        if (titleEl) titleEl.innerText = 'Shield Activity by Day (All Time)';
+        if (activeBadge) activeBadge.innerText = '0d active';
+        if (peakBadge) peakBadge.innerText = 'Peak: --';
         container.innerHTML = '<div class="w-full h-full flex items-center justify-center text-[10px] font-mono swiss-text-muted">No context-mode history yet</div>';
         return;
       }
 
+      // Switch automatically to monthly rollup after 6 months (>180d) or when daily columns get crowded (<4px/day)
+      const containerWidth = container.clientWidth || 0;
+      const isCrowded = containerWidth > 0 && (containerWidth / daily.length) < 4;
+      const useMonthly = daily.length > 180 || isCrowded;
+
+      let series = [];
+      let peakKey = peakDay;
+
+      if (useMonthly) {
+        const monthMap = new Map();
+        daily.forEach(item => {
+          const ym = (item.date || '').slice(0, 7);
+          if (!ym) return;
+          if (!monthMap.has(ym)) {
+            monthMap.set(ym, { key: ym, calls: 0, sessions: 0, tokens_saved: 0, active_days: 0 });
+          }
+          const m = monthMap.get(ym);
+          const c = item.calls || 0;
+          const s = item.sessions || 0;
+          m.calls += c;
+          m.sessions += s;
+          m.tokens_saved += (item.tokens_saved || 0);
+          if (c > 0 || s > 0) m.active_days += 1;
+        });
+        series = Array.from(monthMap.values());
+
+        let peakScore = 0;
+        let activeMonths = 0;
+        peakKey = null;
+        series.forEach(m => {
+          if (m.calls > 0 || m.sessions > 0) activeMonths += 1;
+          const score = m.calls > 0 ? m.calls : (m.sessions * 0.01);
+          if (score > peakScore) {
+            peakScore = score;
+            peakKey = m.key;
+          }
+        });
+
+        const spansMultiYear = series.length > 1 && series[0].key.slice(0, 4) !== series[series.length - 1].key.slice(0, 4);
+        if (titleEl) titleEl.innerText = 'Shield Activity by Month (All Time)';
+        if (activeBadge) activeBadge.innerText = `${activeMonths}m/${series.length}m active`;
+        if (peakBadge) peakBadge.innerText = peakKey ? `Peak: ${formatShortMonth(peakKey, spansMultiYear)}` : 'Peak: --';
+      } else {
+        series = daily.map(item => ({
+          key: item.date,
+          calls: item.calls || 0,
+          sessions: item.sessions || 0,
+          tokens_saved: item.tokens_saved || 0,
+          active_days: ((item.calls || 0) > 0 || (item.sessions || 0) > 0) ? 1 : 0
+        }));
+        if (titleEl) titleEl.innerText = 'Shield Activity by Day (All Time)';
+        if (activeBadge) activeBadge.innerText = totalDays > 0 ? `${activeDays}d/${totalDays}d active` : '0d active';
+        if (peakBadge) peakBadge.innerText = peakDay ? `Peak: ${formatShortDay(peakDay)}` : 'Peak: --';
+      }
+
       let maxVal = 0;
-      daily.forEach(item => {
-        const val = item.calls > 0 ? item.calls : 0;
-        if (val > maxVal) maxVal = val;
+      series.forEach(item => {
+        if (item.calls > maxVal) maxVal = item.calls;
       });
       const useCalls = maxVal > 0;
       if (!useCalls) {
-        daily.forEach(item => {
-          if ((item.sessions || 0) > maxVal) maxVal = item.sessions || 0;
+        series.forEach(item => {
+          if (item.sessions > maxVal) maxVal = item.sessions;
         });
       }
       const denom = Math.max(1, maxVal);
 
-      const n = daily.length;
+      const n = series.length;
       const labelIndices = new Set([0, n - 1]);
-      if (n >= 6) {
+      if (useMonthly && n <= 12) {
+        for (let i = 0; i < n; i++) labelIndices.add(i);
+      } else if (n >= 6) {
         const steps = Math.min(4, Math.floor(n / 4));
         for (let s = 1; s < steps; s++) {
           const idx = Math.round((s * (n - 1)) / steps);
@@ -572,22 +643,24 @@ let currentState = null;
         }
       }
 
-      const colPadding = n > 60 ? '0 0.5px' : n > 35 ? '0 1px' : '0 1.5px';
-      const barMinWidth = n > 90 ? '1px' : '2px';
+      const spansMultiYear = useMonthly && n > 1 && series[0].key.slice(0, 4) !== series[n - 1].key.slice(0, 4);
+      const colPadding = useMonthly ? (n > 24 ? '0 1px' : '0 2px') : (n > 60 ? '0 0.5px' : n > 35 ? '0 1px' : '0 1.5px');
+      const barMinWidth = useMonthly ? '4px' : (n > 90 ? '1px' : '2px');
+      const barMaxWidth = useMonthly ? '18px' : '10px';
       const maxBarPx = 38;
       const frag = document.createDocumentFragment();
 
-      daily.forEach((item, idx) => {
-        const calls = item.calls || 0;
-        const sessions = item.sessions || 0;
-        const saved = item.tokens_saved || 0;
+      series.forEach((item, idx) => {
+        const calls = item.calls;
+        const sessions = item.sessions;
+        const saved = item.tokens_saved;
         const metric = useCalls ? calls : sessions;
 
         let barPx = 2;
         let barCls = 'cm-bar-empty';
         if (calls > 0) {
           barPx = Math.max(5, Math.round((metric / denom) * maxBarPx));
-          barCls = (item.date === peakDay) ? 'cm-bar-peak' : 'cm-bar-active';
+          barCls = (item.key === peakKey) ? 'cm-bar-peak' : 'cm-bar-active';
         } else if (sessions > 0) {
           barPx = Math.max(4, useCalls ? 6 : Math.round((sessions / denom) * maxBarPx));
           barCls = 'cm-bar-idle';
@@ -599,23 +672,30 @@ let currentState = null;
 
         const tip = document.createElement('div');
         tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1 swiss-tooltip text-[10px] font-mono whitespace-nowrap z-30 flex flex-col items-center gap-0.5';
+        const tipTitle = useMonthly ? formatFullMonth(item.key) : formatFullDay(item.key);
+        const tipSub = useMonthly
+          ? `${item.active_days}d · ${sessions} sess`
+          : `${sessions} sess`;
         tip.innerHTML = `
-          <div class="font-bold swiss-text-primary">${formatFullDay(item.date)}</div>
-          <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${sessions} sess)</span></div>
+          <div class="font-bold swiss-text-primary">${tipTitle}</div>
+          <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${tipSub})</span></div>
           <div class="swiss-text-secondary text-[9px]">${fmt(saved)} tok shielded</div>
         `;
 
         const bar = document.createElement('div');
         bar.className = `swiss-bar ${barCls}`;
         bar.style.height = `${barPx}px`;
-        bar.style.maxWidth = '10px';
+        bar.style.maxWidth = barMaxWidth;
         bar.style.minWidth = barMinWidth;
 
         const lbl = document.createElement('div');
         const alignCls = (idx === 0) ? 'justify-start' : (idx === n - 1) ? 'justify-end' : 'justify-center';
         lbl.className = `h-3.5 flex items-center ${alignCls} w-full select-none mt-0.5 overflow-visible`;
         if (labelIndices.has(idx)) {
-          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted leading-none whitespace-nowrap">${formatShortDay(item.date)}</span>`;
+          const shortLbl = useMonthly
+            ? formatShortMonth(item.key, spansMultiYear && (idx === 0 || idx === n - 1 || item.key.endsWith('-01')))
+            : formatShortDay(item.key);
+          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted leading-none whitespace-nowrap">${shortLbl}</span>`;
         } else {
           lbl.innerHTML = `<span class="text-[7px] swiss-text-muted leading-none">·</span>`;
         }
