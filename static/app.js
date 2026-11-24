@@ -797,9 +797,59 @@ async function loadAnalytics() {
       }
     }
 
+    function formatHour12Short(h) {
+      const hr = ((h % 24) + 24) % 24;
+      if (hr === 0) return '12 AM';
+      if (hr < 12) return `${hr} AM`;
+      if (hr === 12) return '12 PM';
+      return `${hr - 12} PM`;
+    }
+
+    // Google AI / Antigravity global rush hours: 5:00 AM – 11:00 AM Pacific Time (America/Los_Angeles)
+    // Converted dynamically to the user's local timezone (handles PST/PDT automatically).
+    function getGoogleAiRushHoursLocal() {
+      const rushSet = new Set();
+      let startLocal = null;
+      let endLocal = null;
+      try {
+        const now = new Date();
+        const ptFmt = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          hour: 'numeric',
+          hour12: false
+        });
+        for (let localH = 0; localH < 24; localH++) {
+          const sample = new Date(now.getFullYear(), now.getMonth(), now.getDate(), localH, 0, 0);
+          const ptHour = parseInt(ptFmt.format(sample), 10) % 24;
+          if (ptHour >= 5 && ptHour < 11) {
+            rushSet.add(localH);
+            if (ptHour === 5) startLocal = localH;
+            if (ptHour === 10) endLocal = (localH + 1) % 24;
+          }
+        }
+      } catch (e) {
+        // Fallback: 13:00–19:00 UTC converted using local timezone offset
+        const offsetHours = Math.round(-new Date().getTimezoneOffset() / 60);
+        for (let utcH = 13; utcH < 19; utcH++) {
+          const lh = ((utcH + offsetHours) % 24 + 24) % 24;
+          rushSet.add(lh);
+          if (utcH === 13) startLocal = lh;
+          if (utcH === 18) endLocal = (lh + 1) % 24;
+        }
+      }
+      return { rushSet, startLocal, endLocal };
+    }
+
     function renderHourlyChart(hourlyList) {
       const container = document.getElementById('hourly-radar-container');
       container.innerHTML = '';
+
+      const { rushSet, startLocal, endLocal } = getGoogleAiRushHoursLocal();
+      const rushLegend = document.getElementById('hourly-rush-legend');
+      if (rushLegend && startLocal !== null && endLocal !== null) {
+        rushLegend.innerText = `AI Rush (${formatHour12Short(startLocal)} – ${formatHour12Short(endLocal)})`;
+        rushLegend.title = 'Google AI / Antigravity peak global traffic window (5 AM – 11 AM PT)';
+      }
 
       // Prepare 24 hours (0..23)
       const hourMap = {};
@@ -827,9 +877,9 @@ async function loadAnalytics() {
       const nightPct = Math.round((nightTokens / totalH) * 100);
       const dayPct = Math.round((dayTokens / totalH) * 100);
 
-      const peak12 = (peakHour === 0) ? '12 AM' : (peakHour < 12) ? `${peakHour} AM` : (peakHour === 12) ? '12 PM' : `${peakHour - 12} PM`;
+      const peak12 = formatHour12Short(peakHour);
       const peakEndHour = (peakHour + 2) % 24;
-      const peakEnd12 = (peakEndHour === 0) ? '12 AM' : (peakEndHour < 12) ? `${peakEndHour} AM` : (peakEndHour === 12) ? '12 PM' : `${peakEndHour - 12} PM`;
+      const peakEnd12 = formatHour12Short(peakEndHour);
 
       const peakBadge = document.getElementById('peak-hour-badge');
       if (peakBadge) peakBadge.innerText = `Peak: ${peak12} (${String(peakHour).padStart(2, '0')}:00)`;
@@ -857,9 +907,11 @@ async function loadAnalytics() {
         const tok = item.total_tokens || 0;
         const hPct = Math.max(3, Math.round((tok / maxTokens) * 78));
         const pctOfPeak = maxTokens > 0 ? Math.round((tok / maxTokens) * 100) : 0;
+        const isRush = rushSet.has(h);
+        const isPersonalPeak = (h === peakHour && tok > 0);
 
         const col = document.createElement('div');
-        col.className = 'flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative cursor-pointer px-[1px]';
+        col.className = `flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative cursor-pointer px-[1px]${isRush ? ' ai-rush-col' : ''}`;
 
         const hour12 = (h === 0) ? '12:00 AM' : (h < 12) ? `${h}:00 AM` : (h === 12) ? '12:00 PM' : `${h - 12}:00 PM`;
         const hour24 = `${String(h).padStart(2, '0')}:00`;
@@ -874,11 +926,14 @@ async function loadAnalytics() {
           </div>
           <div class="text-gray-200 font-semibold">${fmt(tok)} tokens <span class="text-gray-400 font-normal">(${pctOfPeak}%)</span></div>
           <div class="text-gray-400 text-[9px]">${item.turns || 0} prompt turns • ${item.primary_model || 'No activity'}</div>
+          ${isRush ? '<div class="ai-rush-tip-badge">Google AI Rush Hour (5–11 AM PT)</div>' : ''}
         `;
 
-        // Bar coloring: Peak is sky-400, Daytime is slate-500, Night is zinc-700
+        // Bar coloring: Rush hours are red, Personal Peak is sky-400, Daytime is slate-500, Night is zinc-700
         let barColor = 'bg-slate-500/70 hover:bg-slate-400 border-slate-400/20';
-        if (h === peakHour && tok > 0) {
+        if (isRush) {
+          barColor = isPersonalPeak ? 'ai-rush-bar-peak' : 'ai-rush-bar';
+        } else if (isPersonalPeak) {
           barColor = 'bg-sky-400/90 hover:bg-sky-300 border-sky-300/30';
         } else if (h < 7 || h >= 22) {
           barColor = 'bg-zinc-700/60 hover:bg-zinc-600 border-zinc-600/20';
@@ -895,9 +950,9 @@ async function loadAnalytics() {
         const lbl = document.createElement('div');
         lbl.className = 'h-5 flex items-center justify-center w-full select-none';
         if (shortLabels[h]) {
-          lbl.innerHTML = `<span class="text-[8.5px] font-mono text-gray-400 tracking-tight whitespace-nowrap">${shortLabels[h]}</span>`;
+          lbl.innerHTML = `<span class="text-[8.5px] font-mono text-gray-400 tracking-tight whitespace-nowrap${isRush ? ' ai-rush-label' : ''}">${shortLabels[h]}</span>`;
         } else {
-          lbl.innerHTML = `<span class="text-[7px] text-gray-600 leading-none">·</span>`;
+          lbl.innerHTML = `<span class="text-[7px] text-gray-600 leading-none${isRush ? ' ai-rush-dot' : ''}">·</span>`;
         }
 
         col.appendChild(tip);
