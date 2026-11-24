@@ -475,10 +475,34 @@ let currentState = null;
       }
     }
 
+    const optimizerCardState = {
+      contextMode: null,
+      agyFast: null
+    };
+
+    function updateOptimizerGridVisibility() {
+      const grid = document.getElementById('opt-dual-grid');
+      const cmCard = document.getElementById('cm-card');
+      const afCard = document.getElementById('af-card');
+      if (!grid || !cmCard || !afCard) return;
+
+      const cm = optimizerCardState.contextMode;
+      const af = optimizerCardState.agyFast;
+      const showContextMode = Boolean(cm && (cm.installed || cm.active || (cm.total_calls || 0) > 0));
+      const showAgyFast = Boolean(af && (af.installed || af.active || (af.total_calls || 0) > 0));
+      const visibleCount = (showContextMode ? 1 : 0) + (showAgyFast ? 1 : 0);
+
+      cmCard.classList.toggle('opt-hidden', !showContextMode);
+      afCard.classList.toggle('opt-hidden', !showAgyFast);
+      grid.classList.toggle('opt-hidden', visibleCount === 0);
+      grid.classList.toggle('opt-single-col', visibleCount === 1);
+    }
+
     async function loadContextModeData() {
       try {
         const res = await fetch('/api/context-mode/stats');
         const d = await res.json();
+        optimizerCardState.contextMode = d;
         setOptimizerStatusBadge(document.getElementById('cm-status-badge'), Boolean(d.active));
         if (document.getElementById('cm-reduction-pct')) {
           const pct = d.reduction_pct || 0;
@@ -509,8 +533,10 @@ let currentState = null;
           document.getElementById('cm-last-updated').innerText = `Last sync: ${d.last_updated}`;
         }
         renderContextModeDaily(d);
+        updateOptimizerGridVisibility();
       } catch (e) {
         console.error('Failed to load context-mode stats:', e);
+        updateOptimizerGridVisibility();
       }
     }
 
@@ -526,6 +552,7 @@ let currentState = null;
       try {
         const res = await fetch('/api/agy-fast/stats');
         const d = await res.json();
+        optimizerCardState.agyFast = d;
 
         const verBadge = document.getElementById('af-version-badge');
         if (verBadge) {
@@ -587,8 +614,10 @@ let currentState = null;
         }
 
         renderAgyFastDaily(d);
+        updateOptimizerGridVisibility();
       } catch (e) {
         console.error('Failed to load agy-fast stats:', e);
+        updateOptimizerGridVisibility();
       }
     }
 

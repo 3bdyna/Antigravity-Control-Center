@@ -586,6 +586,12 @@ span svg + span,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.opt-dual-grid.opt-single-col {
+  grid-template-columns: minmax(0, 1fr);
+}
+.opt-hidden {
+  display: none !important;
+}
 
 .cm-card,
 .af-card {

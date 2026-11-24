@@ -1883,6 +1883,39 @@ def generate_executive_html_report(time_range="month", account="all"):
     return html
 
 
+def _is_context_mode_installed(home_dir):
+    """Detects whether context-mode is installed locally via state dirs or MCP configs."""
+    try:
+        for d in (
+            os.path.join(home_dir, ".context-mode"),
+            os.path.join(home_dir, ".gemini", "context-mode"),
+        ):
+            if os.path.isdir(d):
+                return True
+    except Exception:
+        pass
+
+    mcp_configs = [
+        os.path.join(home_dir, ".gemini", "antigravity", "mcp_config.json"),
+        os.path.join(home_dir, ".gemini", "antigravity-cli", "mcp_config.json"),
+        os.path.join(home_dir, ".gemini", "antigravity-ide", "mcp_config.json"),
+        os.path.join(home_dir, ".gemini", "settings.json"),
+        os.path.join(home_dir, ".gemini", "config", "plugins", "context-mode", "mcp_config.json"),
+        os.path.join(home_dir, ".agents", "plugins", "context-mode", "mcp_config.json"),
+    ]
+    for cfg_path in mcp_configs:
+        try:
+            if not os.path.isfile(cfg_path):
+                continue
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                raw = f.read()
+            if "context-mode" in raw.lower():
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def get_context_mode_stats():
     """
     Aggregates statistics from context-mode MCP sessions, merging:
@@ -1896,6 +1929,7 @@ def get_context_mode_stats():
     v2_projects_dir = os.path.join(home_dir, ".context-mode", "projects")
 
     stats = {
+        "installed": False,
         "active": False,
         "tokens_saved": 0,
         "bytes_sandboxed": 0,
@@ -2120,6 +2154,11 @@ def get_context_mode_stats():
     if latest_ts > 0:
         stats["last_updated"] = datetime.fromtimestamp(latest_ts / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    stats["installed"] = bool(
+        stats["active"]
+        or stats["total_calls"] > 0
+        or _is_context_mode_installed(home_dir)
+    )
     return stats
 
 
