@@ -531,9 +531,12 @@ async function attachToPage(target) {
   };
 }
 
+const DAEMON_BOOT_TS = Date.now();
 let lastDaemonSpawnAttempt = 0;
 async function ensureControlCenterDaemon() {
   const now = Date.now();
+  // Give Windows Startup time to launch AntigravityControlCenter.exe --daemon before spawning another
+  if (now - DAEMON_BOOT_TS < 4000) return;
   if (now - lastDaemonSpawnAttempt < 15000) return;
   lastDaemonSpawnAttempt = now;
 

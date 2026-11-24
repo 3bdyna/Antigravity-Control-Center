@@ -99,6 +99,7 @@ AUTOPILOT_RUNNING = False
 AUTOPILOT_STATUS_TEXT = "Disabled (Safe Single-Account Mode)"
 TRAY_MENU_UPDATE_CB = None
 SHOW_UI_CB = None
+QUIT_DAEMON_CB = None
 TRAY_ICON = None
 TRAY_MENU = None
 
@@ -884,7 +885,18 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/daemon/quit":
             self.send_json({"ok": True})
-            threading.Thread(target=lambda: (close_ui_window_if_open(), time.sleep(0.2), os._exit(0)), daemon=True).start()
+            def _graceful_quit():
+                close_ui_window_if_open()
+                if QUIT_DAEMON_CB:
+                    try:
+                        QUIT_DAEMON_CB()
+                        time.sleep(1.2)
+                    except Exception:
+                        pass
+                else:
+                    time.sleep(0.2)
+                os._exit(0)
+            threading.Thread(target=_graceful_quit, daemon=True).start()
             return
 
         # Window controls fallbacks (normally intercepted client-side by QWebEngine)
@@ -974,9 +986,10 @@ class ReusableThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServe
     allow_reuse_address = True
     daemon_threads = True
 
-def run_server():
+def run_server(server=None):
     try:
-        server = ReusableThreadingServer(("127.0.0.1", PORT), LocalApiHandler)
+        if server is None:
+            server = ReusableThreadingServer(("127.0.0.1", PORT), LocalApiHandler)
         log_msg(f"Antigravity Control Center server started on http://127.0.0.1:{PORT}")
         server.serve_forever()
     except Exception as e:
@@ -992,25 +1005,42 @@ _UI_LAST_LAUNCH = 0.0
 
 
 def acquire_daemon_mutex():
+    """Atomically acquires the daemon mutex. Returns False if another daemon already holds it."""
     global _DAEMON_MUTEX_HANDLE
+    if _DAEMON_MUTEX_HANDLE:
+        return True
     if os.name == "nt":
         try:
             import ctypes
-            _DAEMON_MUTEX_HANDLE = ctypes.windll.kernel32.CreateMutexW(None, False, DAEMON_MUTEX_NAME)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.CreateMutexW(None, False, DAEMON_MUTEX_NAME)
+            err = ctypes.get_last_error()
+            if not handle or err == 183:  # ERROR_ALREADY_EXISTS
+                if handle:
+                    kernel32.CloseHandle(handle)
+                return False
+            _DAEMON_MUTEX_HANDLE = handle
         except Exception:
             pass
+    return True
 
 
 def acquire_ui_mutex():
     """Returns True if this process owns the UI mutex, False if another --ui is already running."""
     global _UI_MUTEX_HANDLE
+    if _UI_MUTEX_HANDLE:
+        return True
     if os.name == "nt":
         try:
             import ctypes
-            kernel32 = ctypes.windll.kernel32
-            _UI_MUTEX_HANDLE = kernel32.CreateMutexW(None, False, UI_MUTEX_NAME)
-            if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.CreateMutexW(None, False, UI_MUTEX_NAME)
+            err = ctypes.get_last_error()
+            if not handle or err == 183:  # ERROR_ALREADY_EXISTS
+                if handle:
+                    kernel32.CloseHandle(handle)
                 return False
+            _UI_MUTEX_HANDLE = handle
         except Exception:
             pass
     return True
@@ -1228,12 +1258,23 @@ def run_daemon():
 
 
 def _run_daemon_inner():
-    acquire_daemon_mutex()
+    if not acquire_daemon_mutex():
+        return
     ensure_dirs()
 
-    # Start HTTP server FIRST so localhost:28795 responds immediately to Antigravity IDE
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
+    # Bind HTTP server synchronously BEFORE creating QSystemTrayIcon so any duplicate
+    # or port-conflict exits cleanly without ever flashing a second tray icon.
+    bound_server = None
+    try:
+        bound_server = ReusableThreadingServer(("127.0.0.1", PORT), LocalApiHandler)
+    except Exception as e:
+        log_msg(f"Server listen error on port {PORT}: {e}")
+        if is_server_ready():
+            return
+
+    if bound_server is not None:
+        server_thread = threading.Thread(target=run_server, args=(bound_server,), daemon=True)
+        server_thread.start()
 
     # Start background workers
     def init_background_workers():
@@ -1267,10 +1308,10 @@ def _run_daemon_inner():
 
     # Lightweight PyQt5 System Tray ONLY (NO QtWebEngine imported or loaded)
     from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-    from PyQt5.QtCore import QTimer
+    from PyQt5.QtCore import QObject, QTimer, pyqtSignal
     from PyQt5.QtGui import QIcon
 
-    global TRAY_ICON, TRAY_MENU, TRAY_MENU_UPDATE_CB, SHOW_UI_CB
+    global TRAY_ICON, TRAY_MENU, TRAY_MENU_UPDATE_CB, SHOW_UI_CB, QUIT_DAEMON_CB
     app = QApplication([sys.argv[0]])
     app.setQuitOnLastWindowClosed(False)
 
@@ -1285,62 +1326,84 @@ def _run_daemon_inner():
 
     TRAY_MENU = QMenu()
 
-    def on_quit_all():
+    def _hide_tray_icon():
         try:
             if TRAY_ICON:
                 TRAY_ICON.hide()
+                TRAY_ICON.setVisible(False)
+            app.processEvents()
         except Exception:
             pass
+
+    _quitting = False
+
+    def on_quit_all():
+        nonlocal _quitting
+        if _quitting:
+            return
+        _quitting = True
+        _hide_tray_icon()
         close_ui_window_if_open()
         app.quit()
-        threading.Thread(target=lambda: (time.sleep(0.15), os._exit(0)), daemon=True).start()
+        threading.Thread(target=lambda: (time.sleep(0.35), os._exit(0)), daemon=True).start()
 
-    def update_tray_menu():
-        def _do_update():
-            try:
-                TRAY_MENU.clear()
-                active_em = get_active_email()
-                act_lbl = TRAY_MENU.addAction(f"Active: {active_em}")
-                act_lbl.setEnabled(False)
-                TRAY_MENU.addSeparator()
+    def _do_update_menu():
+        try:
+            TRAY_MENU.clear()
+            active_em = get_active_email()
+            act_lbl = TRAY_MENU.addAction(f"Active: {active_em}")
+            act_lbl.setEnabled(False)
+            TRAY_MENU.addSeparator()
 
-                def _bg_switch(acc_email):
-                    res = switch_to_account(acc_email, restart_ide=True)
-                    if res.get("ok"):
-                        LocalApiHandler.cached_status = None
-                        broadcast_status_event()
-                        update_tray_menu()
-
-                def _bg_refresh_quotas():
-                    fetch_all_quotas_parallel(get_saved_accounts(), force_refresh=True)
+            def _bg_switch(acc_email):
+                res = switch_to_account(acc_email, restart_ide=True)
+                if res.get("ok"):
                     LocalApiHandler.cached_status = None
                     broadcast_status_event()
+                    update_tray_menu()
 
-                for acc in get_saved_accounts():
-                    prefix = "✓ " if acc == active_em else "   "
-                    action = TRAY_MENU.addAction(f"{prefix}{acc}")
-                    action.triggered.connect(lambda checked, a=acc: threading.Thread(target=_bg_switch, args=(a,), daemon=True).start())
+            def _bg_refresh_quotas():
+                fetch_all_quotas_parallel(get_saved_accounts(), force_refresh=True)
+                LocalApiHandler.cached_status = None
+                broadcast_status_event()
 
-                TRAY_MENU.addSeparator()
-                show_act = TRAY_MENU.addAction("Open Control Center")
-                show_act.triggered.connect(lambda: open_or_restore_ui())
+            for acc in get_saved_accounts():
+                prefix = "✓ " if acc == active_em else "   "
+                action = TRAY_MENU.addAction(f"{prefix}{acc}")
+                action.triggered.connect(lambda checked, a=acc: threading.Thread(target=_bg_switch, args=(a,), daemon=True).start())
 
-                refresh_act = TRAY_MENU.addAction("Refresh Quotas Now")
-                refresh_act.triggered.connect(lambda: threading.Thread(target=_bg_refresh_quotas, daemon=True).start())
+            TRAY_MENU.addSeparator()
+            show_act = TRAY_MENU.addAction("Open Control Center")
+            show_act.triggered.connect(lambda: open_or_restore_ui())
 
-                TRAY_MENU.addSeparator()
-                quit_act = TRAY_MENU.addAction("Quit Control Center")
-                quit_act.triggered.connect(on_quit_all)
-            except Exception:
-                pass
-        try:
-            QTimer.singleShot(0, _do_update)
+            refresh_act = TRAY_MENU.addAction("Refresh Quotas Now")
+            refresh_act.triggered.connect(lambda: threading.Thread(target=_bg_refresh_quotas, daemon=True).start())
+
+            TRAY_MENU.addSeparator()
+            quit_act = TRAY_MENU.addAction("Quit Control Center")
+            quit_act.triggered.connect(on_quit_all)
         except Exception:
-            _do_update()
+            pass
+
+    class _TrayBridge(QObject):
+        sig_update_menu = pyqtSignal()
+        sig_quit = pyqtSignal()
+
+    tray_bridge = _TrayBridge()
+    tray_bridge.sig_update_menu.connect(_do_update_menu)
+    tray_bridge.sig_quit.connect(on_quit_all)
+
+    def update_tray_menu():
+        try:
+            tray_bridge.sig_update_menu.emit()
+        except Exception:
+            pass
 
     TRAY_MENU_UPDATE_CB = update_tray_menu
-    TRAY_MENU.aboutToShow.connect(update_tray_menu)
-    update_tray_menu()
+    QUIT_DAEMON_CB = lambda: tray_bridge.sig_quit.emit()
+    app.aboutToQuit.connect(_hide_tray_icon)
+    TRAY_MENU.aboutToShow.connect(_do_update_menu)
+    _do_update_menu()
     TRAY_ICON.setContextMenu(TRAY_MENU)
     TRAY_ICON.show()
 
@@ -1354,6 +1417,7 @@ def _run_daemon_inner():
 
     log_msg("[Daemon] Entering lightweight tray app.exec_() (Chromium-free)...")
     exit_code = app.exec_()
+    _hide_tray_icon()
     log_msg(f"[Daemon] app.exec_() returned with exit code: {exit_code}")
     sys.exit(exit_code)
 
@@ -1643,8 +1707,15 @@ def _run_ui_inner():
 
 def _ensure_daemon_started():
     """Spawns --daemon detached if not already alive and waits up to 3s for HTTP readiness."""
-    if is_daemon_alive() and is_server_ready():
-        return True
+    if is_daemon_alive():
+        if is_server_ready():
+            return True
+        # Existing daemon is still booting; wait for its HTTP server instead of spawning a duplicate
+        for _ in range(120):
+            time.sleep(0.025)
+            if is_server_ready():
+                return True
+        return False
     flags = 0
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
@@ -1665,13 +1736,19 @@ def main():
         return
 
     if any(arg in args for arg in ("--daemon", "--minimized", "--tray", "--hidden")):
-        if is_daemon_alive():
+        if not acquire_daemon_mutex():
             sys.exit(0)
         run_daemon()
         return
 
     # Default invocation (desktop shortcut, IPC fallback, or antigravity-cc://open)
     if is_daemon_alive():
+        # Wait briefly if the daemon just started and is still binding the HTTP port
+        if not is_server_ready():
+            for _ in range(100):
+                time.sleep(0.025)
+                if is_server_ready():
+                    break
         try:
             import urllib.request
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/open-ui", timeout=1.5) as r:
@@ -1679,9 +1756,17 @@ def main():
                     sys.exit(0)
         except Exception:
             pass
-        # Old daemon wedged/unresponsive -> self-heal cleanly
-        _kill_other_instances()
-        time.sleep(0.3)
+        # Old daemon wedged/unresponsive -> request clean quit first, then force-kill if needed
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/daemon/quit", method="POST")
+            urllib.request.urlopen(req, timeout=0.6)
+            time.sleep(0.5)
+        except Exception:
+            pass
+        if is_daemon_alive():
+            _kill_other_instances()
+            time.sleep(0.3)
 
     _ensure_daemon_started()
     run_ui()
