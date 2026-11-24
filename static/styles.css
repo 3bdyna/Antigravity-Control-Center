@@ -623,13 +623,13 @@ span svg + span,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   min-width: 0;
   padding-top: 2px;
 }
 .opt-footer-left {
   flex: 1 1 auto;
   min-width: 0;
+  margin-right: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
