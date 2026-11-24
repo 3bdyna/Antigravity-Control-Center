@@ -486,7 +486,13 @@ let currentState = null;
           document.getElementById('cm-reduction-pct').innerText = `${pctStr}%`;
         }
         if (document.getElementById('cm-tokens-saved')) {
-          document.getElementById('cm-tokens-saved').innerText = fmt(d.tokens_saved || 0);
+          const tok = d.tokens_saved || 0;
+          document.getElementById('cm-tokens-saved').innerText = tok > 0 ? `~${fmt(tok)}` : '0';
+        }
+        const cmSavedCell = document.getElementById('cm-saved-cell');
+        if (cmSavedCell) {
+          const mb = ((d.bytes_sandboxed || 0) / (1024 * 1024)).toFixed(2);
+          cmSavedCell.title = `Estimated ~${fmt(d.tokens_saved || 0)} prompt tokens kept out of context (${mb} MB suppressed output ÷ 4 bytes/tok, single-turn lower bound)`;
         }
         if (document.getElementById('cm-bytes-sandboxed')) {
           const mb = ((d.bytes_sandboxed || 0) / (1024 * 1024)).toFixed(1);
@@ -539,6 +545,14 @@ let currentState = null;
           batchBadge.innerText = `${mult.toFixed(1)}× batch`;
         }
 
+        if (document.getElementById('af-tokens-saved')) {
+          const tok = d.tokens_saved || 0;
+          document.getElementById('af-tokens-saved').innerText = tok > 0 ? `~${fmt(tok)}` : '0';
+        }
+        const afSavedCell = document.getElementById('af-saved-cell');
+        if (afSavedCell) {
+          afSavedCell.title = `Conservative uncached tokens saved: ~${fmt(d.outline_tokens_saved || 0)} tok (outline file-reads avoided) + ~${fmt(d.turn_tokens_saved || 0)} tok (collapsed turn output) · Plus ~${fmt(d.cache_reads_avoided || 0)} cached prefix re-reads avoided`;
+        }
         if (document.getElementById('af-batched-ops')) {
           document.getElementById('af-batched-ops').innerText = fmt(d.batched_ops || 0);
         }
@@ -647,7 +661,7 @@ let currentState = null;
           const ym = (item.date || '').slice(0, 7);
           if (!ym) return;
           if (!monthMap.has(ym)) {
-            monthMap.set(ym, { key: ym, calls: 0, sessions: 0, secMetric: 0, terMetric: 0, active_days: 0 });
+            monthMap.set(ym, { key: ym, calls: 0, sessions: 0, secMetric: 0, terMetric: 0, quaMetric: 0, active_days: 0 });
           }
           const m = monthMap.get(ym);
           const c = item.calls || 0;
@@ -656,6 +670,7 @@ let currentState = null;
           m.sessions += s;
           m.secMetric += (item[opts.secondaryField] || 0);
           m.terMetric += (opts.tertiaryField ? (item[opts.tertiaryField] || 0) : 0);
+          m.quaMetric += (opts.quaternaryField ? (item[opts.quaternaryField] || 0) : 0);
           if (c > 0 || s > 0) m.active_days += 1;
         });
         series = Array.from(monthMap.values());
@@ -683,6 +698,7 @@ let currentState = null;
           sessions: item.sessions || 0,
           secMetric: item[opts.secondaryField] || 0,
           terMetric: opts.tertiaryField ? (item[opts.tertiaryField] || 0) : 0,
+          quaMetric: opts.quaternaryField ? (item[opts.quaternaryField] || 0) : 0,
           active_days: ((item.calls || 0) > 0 || (item.sessions || 0) > 0) ? 1 : 0
         }));
         if (titleEl) titleEl.innerText = opts.dayTitle;
@@ -807,6 +823,7 @@ let currentState = null;
         emptyText: d.installed ? 'No agy-fast calls logged yet' : 'agy-fast plugin not installed',
         secondaryField: 'batched_ops',
         tertiaryField: 'turns_saved',
+        quaternaryField: 'tokens_saved',
         barPeak: 'af-bar-peak',
         barActive: 'af-bar-active',
         barIdle: 'af-bar-idle',
@@ -814,7 +831,7 @@ let currentState = null;
         renderTooltip: (title, calls, tipSub, item) => `
           <div class="font-bold swiss-text-primary">${title}</div>
           <div class="swiss-text-accent font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${tipSub})</span></div>
-          <div class="swiss-text-secondary text-[9px]">${fmt(item.secMetric)} ops · ${fmt(item.terMetric)} turns saved</div>
+          <div class="swiss-text-secondary text-[9px]">${fmt(item.secMetric)} ops · ${fmt(item.terMetric)} turns · ~${fmt(item.quaMetric)} tok saved</div>
         `
       });
     }

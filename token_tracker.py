@@ -2343,6 +2343,118 @@ def _get_tool_call_id(obj):
     return None
 
 
+def _resolve_existing_file(raw_path, cwd_str):
+    """Resolves raw_path against cwd_str and returns (norm_key, file_size_bytes) if it exists."""
+    if not isinstance(raw_path, str):
+        return None, 0
+    p = _unwrap_json_string(raw_path).strip()
+    if not p:
+        return None, 0
+    if not os.path.isabs(p):
+        if not cwd_str or not os.path.isdir(cwd_str):
+            return None, 0
+        p = os.path.join(cwd_str, p)
+    try:
+        abs_p = os.path.abspath(p)
+        if not os.path.isfile(abs_p):
+            return None, 0
+        key = os.path.normcase(os.path.realpath(abs_p))
+        return key, os.path.getsize(abs_p)
+    except Exception:
+        return None, 0
+
+
+def _match_generic_responses(calls, generic_steps, planner_idx):
+    """Maps call index -> matching GENERIC response step by tool_call_id or step_index."""
+    if not calls or not generic_steps:
+        return {}
+    call_ids = {cid for cid in (_get_tool_call_id(c) for c in calls if isinstance(c, dict)) if cid}
+    gen_by_id = {}
+    gen_by_idx = {}
+    any_explicit = False
+    any_matched = False
+    for gs in generic_steps:
+        if isinstance(gs.get("tool_call_id"), str) and gs.get("tool_call_id").strip():
+            any_explicit = True
+        if isinstance(gs.get("call_id"), str) and gs.get("call_id").strip():
+            any_explicit = True
+        gid = _get_tool_call_id(gs)
+        if gid:
+            gen_by_id.setdefault(gid, gs)
+            if gid in call_ids:
+                any_matched = True
+        sidx = gs.get("step_index")
+        if isinstance(sidx, int) and sidx not in gen_by_idx:
+            gen_by_idx[sidx] = gs
+
+    use_id_mode = any_explicit or any_matched
+    matched = {}
+    for call_idx, call in enumerate(calls):
+        if not isinstance(call, dict):
+            continue
+        cid = _get_tool_call_id(call)
+        res_step = None
+        if cid and cid in gen_by_id:
+            res_step = gen_by_id[cid]
+        elif not (cid and use_id_mode):
+            if isinstance(planner_idx, int) and gen_by_idx:
+                res_step = gen_by_idx.get(planner_idx + 1 + call_idx)
+            elif planner_idx is None and not gen_by_idx and len(generic_steps) == len(calls):
+                res_step = generic_steps[call_idx]
+        if res_step is not None:
+            matched[call_idx] = res_step
+    return matched
+
+
+def _estimate_effective_turns_saved(fast_tool, ops, inner):
+    """Conservative estimate of whole LLM round-trips collapsed by one agy-fast call."""
+    if ops <= 1:
+        return 0.0
+    if fast_tool == "apply_edits":
+        has_verify = bool(isinstance(inner, dict) and isinstance(inner.get("verify"), str) and inner.get("verify").strip())
+        if has_verify:
+            edit_ops = max(1, ops - 1)
+            return 1.0 + min(2.0, 0.5 * (edit_ops - 1))
+        return min(2.5, 0.5 * (ops - 1))
+    if fast_tool == "run_checks":
+        return min(2.5, 0.5 * (ops - 1))
+    return min(3.0, 0.35 * (ops - 1))
+
+
+def _extract_outline_targets(fast_tool, inner):
+    """Returns list of file paths requested for outline/slice reading from inner args."""
+    if not isinstance(inner, dict):
+        return []
+    if fast_tool == "quick_outline":
+        raw = inner.get("paths") if inner.get("paths") is not None else (inner.get("outlines") if inner.get("outlines") is not None else inner.get("files"))
+        vals = _maybe_parse_json(raw)
+        return [v for v in vals if isinstance(v, str)] if isinstance(vals, list) else []
+    if fast_tool == "read_slices":
+        vals = _maybe_parse_json(inner.get("outlines"))
+        return [v for v in vals if isinstance(v, str)] if isinstance(vals, list) else []
+    return []
+
+
+def _extract_read_slice_targets(inner):
+    """Returns list of file paths whose contents were read via read_slices."""
+    if not isinstance(inner, dict):
+        return []
+    out = []
+    lr = _maybe_parse_json(inner.get("lineRanges"))
+    if isinstance(lr, list):
+        for item in lr:
+            if isinstance(item, str) and ":" in item:
+                out.append(item.rsplit(":", 1)[0])
+    sl = _maybe_parse_json(inner.get("slices"))
+    if isinstance(sl, list):
+        for item in sl:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("path"), str):
+                out.append(item["path"])
+    return out
+
+
 def _parse_single_transcript_for_agy_fast(fpath):
     """Extracts agy-fast usage, health, speed comparison, and daily buckets from one transcript."""
     steps = []
@@ -2378,6 +2490,12 @@ def _parse_single_transcript_for_agy_fast(fpath):
     latest_ts_ms = None
     active_sec = 0.0
     total_out_tokens = 0
+    out_samples = []
+    cache_samples = []
+    outlined_files = {}  # norm_key -> {"baseline_bytes": int, "outline_bytes": int, "day": str|None}
+    read_bytes_by_file = {}  # norm_key -> int
+    eff_turns_total = 0.0
+    eff_turns_by_day = {}
 
     for i, step in enumerate(steps):
         stype = step.get("type")
@@ -2400,6 +2518,10 @@ def _parse_single_transcript_for_agy_fast(fpath):
         out_tok = step.get("output_tokens") or 0
         if isinstance(out_tok, (int, float)) and out_tok > 0:
             total_out_tokens += int(out_tok)
+            out_samples.append(int(out_tok))
+        cache_tok = step.get("cache_read_tokens") or 0
+        if isinstance(cache_tok, (int, float)) and cache_tok > 0:
+            cache_samples.append(int(cache_tok))
 
         t_planner = _parse_iso_dt(step.get("created_at"))
         calls = step.get("tool_calls") or []
@@ -2442,7 +2564,21 @@ def _parse_single_transcript_for_agy_fast(fpath):
         if not has_fast_hint or not calls:
             continue
 
-        agy_calls_turn = []
+        matched_generics = _match_generic_responses(calls, generic_steps, step.get("step_index"))
+        turn_day = t_planner.astimezone().date().strftime("%Y-%m-%d") if t_planner is not None else None
+
+        # Track native read_file bytes against any files outlined in this session
+        for call_idx, call in enumerate(calls):
+            if not isinstance(call, dict):
+                continue
+            if call.get("name") == "read_file":
+                rargs = _get_call_args(call) or {}
+                rkey, _ = _resolve_existing_file(rargs.get("Path") or rargs.get("path"), None)
+                if rkey and call_idx in matched_generics:
+                    rtxt = matched_generics[call_idx].get("content") or ""
+                    rbody = _HOST_META_PREFIX_RE.sub("", rtxt, count=1) if isinstance(rtxt, str) else ""
+                    read_bytes_by_file[rkey] = read_bytes_by_file.get(rkey, 0) + len(rbody.encode("utf-8", errors="ignore"))
+
         for call_idx, call in enumerate(calls):
             if not isinstance(call, dict):
                 continue
@@ -2450,102 +2586,121 @@ def _parse_single_transcript_for_agy_fast(fpath):
             if not fast_tool:
                 continue
             ops, corrupted = _count_batched_ops_and_corrupted(call, fast_tool, mode)
+            inner = _extract_inner_fast_args(call, mode)
+            eff = _estimate_effective_turns_saved(fast_tool, ops, inner)
             total_calls += 1
             batched_ops += ops
+            eff_turns_total += eff
             by_tool[fast_tool]["calls"] += 1
             by_tool[fast_tool]["ops"] += ops
             dispatch[mode] += 1
             if corrupted:
                 health["corrupted_args"] += 1
-            agy_calls_turn.append((call_idx, call, fast_tool))
 
             if t_planner is not None:
                 ts_ms = int(t_planner.timestamp() * 1000)
                 earliest_ts_ms = ts_ms if earliest_ts_ms is None else min(earliest_ts_ms, ts_ms)
                 latest_ts_ms = ts_ms if latest_ts_ms is None else max(latest_ts_ms, ts_ms)
-                day_key = t_planner.astimezone().date().strftime("%Y-%m-%d")
-                session_days.add(day_key)
-                b = daily.setdefault(day_key, {"calls": 0, "batched_ops": 0, "turns_saved": 0})
+                session_days.add(turn_day)
+                b = daily.setdefault(turn_day, {"calls": 0, "batched_ops": 0, "turns_saved": 0, "tokens_saved": 0})
                 b["calls"] += 1
                 b["batched_ops"] += ops
                 b["turns_saved"] += max(0, ops - 1)
+                eff_turns_by_day[turn_day] = eff_turns_by_day.get(turn_day, 0.0) + eff
 
-        if agy_calls_turn:
-            call_ids = {cid for cid in (_get_tool_call_id(c) for c in calls if isinstance(c, dict)) if cid}
-            gen_by_id = {}
-            gen_by_idx = {}
-            any_explicit = False
-            any_matched = False
-            for gs in generic_steps:
-                if isinstance(gs.get("tool_call_id"), str) and gs.get("tool_call_id").strip():
-                    any_explicit = True
-                if isinstance(gs.get("call_id"), str) and gs.get("call_id").strip():
-                    any_explicit = True
-                gid = _get_tool_call_id(gs)
-                if gid:
-                    gen_by_id.setdefault(gid, gs)
-                    if gid in call_ids:
-                        any_matched = True
-                sidx = gs.get("step_index")
-                if isinstance(sidx, int) and sidx not in gen_by_idx:
-                    gen_by_idx[sidx] = gs
+            res_step = matched_generics.get(call_idx)
+            if not res_step:
+                continue
 
-            use_id_mode = any_explicit or any_matched
-            planner_idx = step.get("step_index")
-            for call_idx, call, fast_tool in agy_calls_turn:
-                res_step = None
-                cid = _get_tool_call_id(call)
-                if cid and cid in gen_by_id:
-                    res_step = gen_by_id[cid]
-                elif not (cid and use_id_mode):
-                    if isinstance(planner_idx, int) and gen_by_idx:
-                        res_step = gen_by_idx.get(planner_idx + 1 + call_idx)
-                    elif planner_idx is None and not gen_by_idx and len(generic_steps) == len(calls):
-                        res_step = generic_steps[call_idx]
+            res_text = res_step.get("content") if isinstance(res_step.get("content"), str) else ""
+            raw_body = _HOST_META_PREFIX_RE.sub("", res_text, count=1)
+            cli_exit = None
+            body = raw_body
+            if (call.get("name") or "") == "run_command":
+                em = re.match(r"^Command exited with code (\d+)\.\s*(?:\r?\n)+(?:Command output:\r?\n)?", raw_body)
+                if em:
+                    cli_exit = int(em.group(1))
+                    body = raw_body[em.end():]
 
-                if not res_step:
-                    continue
+            head = body.splitlines()[:3]
+            first_line = head[0] if head else ""
+            is_spill = bool(_HOST_SPILL_FIRST_LINE_RE.match(first_line)) or (
+                bool(_HOST_SPILL_HEAD_RE.match(first_line)) and ("output.txt" in "\n".join(head))
+            )
+            if is_spill:
+                health["spills"] += 1
+            elif _AGY_BUDGET_TRUNC_RE.search(body):
+                health["truncations"] += 1
 
-                res_text = res_step.get("content") if isinstance(res_step.get("content"), str) else ""
-                raw_body = _HOST_META_PREFIX_RE.sub("", res_text, count=1)
-                cli_exit = None
-                body = raw_body
-                if (call.get("name") or "") == "run_command":
-                    em = re.match(r"^Command exited with code (\d+)\.\s*(?:\r?\n)+(?:Command output:\r?\n)?", raw_body)
-                    if em:
-                        cli_exit = int(em.group(1))
-                        body = raw_body[em.end():]
+            is_verify_fail = (fast_tool == "apply_edits") and (not is_spill) and bool(_AGY_VERIFY_FAIL_RE.search(body))
+            is_normal_check_fail = (
+                (fast_tool == "run_checks")
+                and (cli_exit is not None and cli_exit != 0)
+                and bool(re.match(r"^Checks:\s+\d+/\d+\s+passed,", body))
+            )
+            is_cli_err = (cli_exit is not None and cli_exit != 0) and (not is_verify_fail) and (not is_normal_check_fail)
+            is_err = (
+                res_step.get("status") in ("ERROR", "INVALID")
+                or is_cli_err
+                or bool(_AGY_ERROR_HEAD_RE.match(body))
+                or ((call.get("name") or "") == "run_command" and not is_verify_fail and not is_normal_check_fail and body.startswith("Error:"))
+            )
+            if is_err:
+                health["errors"] += 1
+            elif is_verify_fail:
+                health["verify_fails"] += 1
 
-                head = body.splitlines()[:3]
-                first_line = head[0] if head else ""
-                is_spill = bool(_HOST_SPILL_FIRST_LINE_RE.match(first_line)) or (
-                    bool(_HOST_SPILL_HEAD_RE.match(first_line)) and ("output.txt" in "\n".join(head))
-                )
-                if is_spill:
-                    health["spills"] += 1
-                elif _AGY_BUDGET_TRUNC_RE.search(body):
-                    health["truncations"] += 1
-
-                is_verify_fail = (fast_tool == "apply_edits") and (not is_spill) and bool(_AGY_VERIFY_FAIL_RE.search(body))
-                is_normal_check_fail = (
-                    (fast_tool == "run_checks")
-                    and (cli_exit is not None and cli_exit != 0)
-                    and bool(re.match(r"^Checks:\s+\d+/\d+\s+passed,", body))
-                )
-                is_cli_err = (cli_exit is not None and cli_exit != 0) and (not is_verify_fail) and (not is_normal_check_fail)
-                is_err = (
-                    res_step.get("status") in ("ERROR", "INVALID")
-                    or is_cli_err
-                    or bool(_AGY_ERROR_HEAD_RE.match(body))
-                    or ((call.get("name") or "") == "run_command" and not is_verify_fail and not is_normal_check_fail and body.startswith("Error:"))
-                )
-                if is_err:
-                    health["errors"] += 1
-                elif is_verify_fail:
-                    health["verify_fails"] += 1
+            if not is_err and not is_spill and isinstance(inner, dict):
+                cwd_str = _unwrap_json_string(inner.get("cwd") or "").strip()
+                if fast_tool == "read_slices":
+                    sl_paths = _extract_read_slice_targets(inner)
+                    if sl_paths:
+                        per_slice_bytes = len(body.encode("utf-8", errors="ignore")) // len(sl_paths)
+                        for sp in sl_paths:
+                            skey, _ = _resolve_existing_file(sp, cwd_str)
+                            if skey:
+                                read_bytes_by_file[skey] = read_bytes_by_file.get(skey, 0) + per_slice_bytes
+                outline_paths = _extract_outline_targets(fast_tool, inner)
+                if outline_paths:
+                    per_out_bytes = len(body.encode("utf-8", errors="ignore")) // len(outline_paths)
+                    for op in outline_paths:
+                        okey, fsize = _resolve_existing_file(op, cwd_str)
+                        if okey and okey not in outlined_files:
+                            # Cap baseline at read_file's 1-call limit (46,080 bytes)
+                            outlined_files[okey] = {
+                                "baseline_bytes": min(fsize, 46080),
+                                "outline_bytes": per_out_bytes,
+                                "day": turn_day,
+                            }
 
     if not has_planner:
         return None
+
+    outline_tokens_saved = 0
+    for okey, info in outlined_files.items():
+        saved_bytes = max(0, info["baseline_bytes"] - info["outline_bytes"] - read_bytes_by_file.get(okey, 0))
+        tok = int(round(saved_bytes / 4.0))
+        outline_tokens_saved += tok
+        if info["day"] and info["day"] in daily:
+            daily[info["day"]]["tokens_saved"] += tok
+
+    med_out = 0
+    if out_samples:
+        sorted_out = sorted(out_samples)
+        med_out = min(1500, sorted_out[len(sorted_out) // 2])
+    elif total_calls > 0:
+        med_out = 350
+
+    med_cache = 0
+    if cache_samples:
+        sorted_cache = sorted(cache_samples)
+        med_cache = sorted_cache[len(sorted_cache) // 2]
+
+    turn_tokens_saved = int(round(eff_turns_total * med_out))
+    cache_reads_avoided = int(round(eff_turns_total * med_cache))
+    for d_key, et in eff_turns_by_day.items():
+        if d_key in daily:
+            daily[d_key]["tokens_saved"] += int(round(et * med_out))
 
     return {
         "has_fast": total_calls > 0,
@@ -2561,6 +2716,10 @@ def _parse_single_transcript_for_agy_fast(fpath):
         "latest_ts_ms": latest_ts_ms,
         "active_sec": active_sec,
         "output_tokens": total_out_tokens,
+        "outline_tokens_saved": outline_tokens_saved,
+        "turn_tokens_saved": turn_tokens_saved,
+        "cache_reads_avoided": cache_reads_avoided,
+        "tokens_saved": outline_tokens_saved + turn_tokens_saved,
     }
 
 
@@ -2685,6 +2844,10 @@ def get_agy_fast_stats():
         "total_calls": 0,
         "batched_ops": 0,
         "turns_saved": 0,
+        "tokens_saved": 0,
+        "outline_tokens_saved": 0,
+        "turn_tokens_saved": 0,
+        "cache_reads_avoided": 0,
         "batch_multiplier": 0.0,
         "total_sessions": 0,
         "sessions_with_fast": 0,
@@ -2743,6 +2906,10 @@ def get_agy_fast_stats():
 
         stats["total_calls"] += parsed["total_calls"]
         stats["batched_ops"] += parsed["batched_ops"]
+        stats["outline_tokens_saved"] += parsed.get("outline_tokens_saved", 0)
+        stats["turn_tokens_saved"] += parsed.get("turn_tokens_saved", 0)
+        stats["cache_reads_avoided"] += parsed.get("cache_reads_avoided", 0)
+        stats["tokens_saved"] += parsed.get("tokens_saved", 0)
         for mode in ("eager", "lazy", "cli"):
             stats["dispatch"][mode] += parsed["dispatch"][mode]
         for hk in stats["health"]:
@@ -2757,13 +2924,14 @@ def get_agy_fast_stats():
             latest_ts_ms = parsed["latest_ts_ms"] if latest_ts_ms is None else max(latest_ts_ms, parsed["latest_ts_ms"])
 
         for d_key in parsed["session_days"]:
-            b = daily_agg.setdefault(d_key, {"calls": 0, "batched_ops": 0, "turns_saved": 0, "sessions": 0})
+            b = daily_agg.setdefault(d_key, {"calls": 0, "batched_ops": 0, "turns_saved": 0, "tokens_saved": 0, "sessions": 0})
             b["sessions"] += 1
         for d_key, vals in parsed["daily"].items():
-            b = daily_agg.setdefault(d_key, {"calls": 0, "batched_ops": 0, "turns_saved": 0, "sessions": 0})
+            b = daily_agg.setdefault(d_key, {"calls": 0, "batched_ops": 0, "turns_saved": 0, "tokens_saved": 0, "sessions": 0})
             b["calls"] += vals["calls"]
             b["batched_ops"] += vals["batched_ops"]
             b["turns_saved"] += vals["turns_saved"]
+            b["tokens_saved"] += vals.get("tokens_saved", 0)
 
     stats["turns_saved"] = max(0, stats["batched_ops"] - stats["total_calls"])
     if stats["total_calls"] > 0:
@@ -2798,12 +2966,14 @@ def get_agy_fast_stats():
             calls = int(raw.get("calls", 0))
             ops = int(raw.get("batched_ops", 0))
             saved = int(raw.get("turns_saved", 0))
+            tok_saved = int(raw.get("tokens_saved", 0))
             sess = int(raw.get("sessions", 0))
             daily_buckets.append({
                 "date": d_key,
                 "calls": calls,
                 "batched_ops": ops,
                 "turns_saved": saved,
+                "tokens_saved": tok_saved,
                 "sessions": sess,
             })
             if calls > 0 or sess > 0:

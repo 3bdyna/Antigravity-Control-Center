@@ -622,6 +622,14 @@ span svg + span,
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
 }
+.cm-strip-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 520px) {
+  .cm-strip-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .cm-strip-cell {
   padding: 6px 8px;
   text-align: center;
@@ -629,6 +637,14 @@ span svg + span,
 }
 .cm-strip-cell + .cm-strip-cell {
   border-left: 1px solid var(--border-subtle);
+}
+@media (max-width: 519px) {
+  .cm-strip-4 .cm-strip-cell:nth-child(3) {
+    border-left: none;
+  }
+  .cm-strip-4 .cm-strip-cell:nth-child(n+3) {
+    border-top: 1px solid var(--border-subtle);
+  }
 }
 .cm-strip-val {
   font-family: var(--font-mono);

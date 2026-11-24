@@ -267,9 +267,9 @@
           </div>
 
           <div class="cm-strip">
-            <div class="cm-strip-cell">
-              <div class="swiss-micro-label">Shielded</div>
-              <div class="cm-strip-val truncate" id="cm-tokens-saved">0</div>
+            <div class="cm-strip-cell" id="cm-saved-cell" title="Estimated tokens kept out of context (suppressed bytes / 4)">
+              <div class="swiss-micro-label">Est. Saved</div>
+              <div class="cm-strip-val truncate swiss-text-sage" id="cm-tokens-saved">0</div>
             </div>
             <div class="cm-strip-cell">
               <div class="swiss-micro-label">Sandboxed</div>
@@ -327,14 +327,18 @@
             </div>
           </div>
 
-          <div class="cm-strip">
+          <div class="cm-strip cm-strip-4">
+            <div class="cm-strip-cell" id="af-saved-cell" title="Conservative uncached tokens saved (outline skips + collapsed turn output)">
+              <div class="swiss-micro-label">Est. Saved</div>
+              <div class="cm-strip-val truncate swiss-text-accent" id="af-tokens-saved">0</div>
+            </div>
             <div class="cm-strip-cell">
               <div class="swiss-micro-label">Batched Ops</div>
               <div class="cm-strip-val truncate" id="af-batched-ops">0</div>
             </div>
             <div class="cm-strip-cell">
               <div class="swiss-micro-label">Turns Saved</div>
-              <div class="cm-strip-val truncate swiss-text-accent" id="af-turns-saved">0</div>
+              <div class="cm-strip-val truncate" id="af-turns-saved">0</div>
             </div>
             <div class="cm-strip-cell">
               <div class="swiss-micro-label">Calls</div>
