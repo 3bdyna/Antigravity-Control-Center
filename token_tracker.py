@@ -1908,9 +1908,25 @@ def _is_context_mode_installed(home_dir):
             if not os.path.isfile(cfg_path):
                 continue
             with open(cfg_path, "r", encoding="utf-8") as f:
-                raw = f.read()
-            if "context-mode" in raw.lower():
-                return True
+                data = json.load(f)
+            if not isinstance(data, dict):
+                continue
+            mcp_servers = data.get("mcpServers")
+            if not isinstance(mcp_servers, dict):
+                continue
+            for server_name, entry in mcp_servers.items():
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("disabled") is True or entry.get("enabled") is False:
+                    continue
+                args = entry.get("args", [])
+                args_match = isinstance(args, list) and any("context-mode" in str(a).lower() for a in args)
+                if (
+                    "context-mode" in str(server_name).lower()
+                    or "context-mode" in str(entry.get("command", "")).lower()
+                    or args_match
+                ):
+                    return True
         except Exception:
             continue
     return False
