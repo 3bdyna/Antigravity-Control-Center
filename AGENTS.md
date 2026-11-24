@@ -39,3 +39,4 @@ Windows desktop Control Center (PyQt5 + PyQtWebEngine + local HTTP/SSE server on
 3. **Single-Instance & Low-Memory Tray:** Keep Windows Named Mutex checks and working-set trimming intact so duplicate daemons do not spawn.
 4. **No Hardcoded Secrets in Git:** Never commit personal tokens, `accounts/` folders, `tokens_history.db`, or `quotas_cache.json`.
 5. **Process & Timeout Discipline:** All HTTP/network/subprocess calls must use explicit timeouts and clean up background threads/processes deterministically.
+6. **Auto-Commit & Push After Updates:** After completing and verifying any code or config update, stage the changed files (excluding secrets/state listed in rule 4), commit with a clear message, and push to `origin/main` automatically.

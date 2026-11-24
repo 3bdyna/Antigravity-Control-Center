@@ -476,6 +476,12 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
                 self.send_static("app.js", body, "application/javascript; charset=utf-8", cache_control="no-cache")
                 return
 
+        if path == "/static/app_icon.png":
+            body = self._get_static_asset("app_icon.png")
+            if body is not None:
+                self.send_static("app_icon.png", body, "image/png", cache_control="public, max-age=86400")
+                return
+
         if path == "/tailwind.min.js":
             if LocalApiHandler._tailwind_bytes is None:
                 candidate_dirs = [
@@ -1523,6 +1529,7 @@ def _run_ui_inner():
     app = QApplication(sys.argv)
     icon_path = _resolve_icon_path()
     app_icon = QIcon(icon_path) if icon_path else app.style().standardIcon(app.style().SP_ComputerIcon)
+    app.setWindowIcon(app_icon)
 
     win = MainWindow(app_icon)
     exit_code = app.exec_()

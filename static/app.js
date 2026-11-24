@@ -503,56 +503,81 @@ let currentState = null;
         if (document.getElementById('cm-last-updated') && d.last_updated) {
           document.getElementById('cm-last-updated').innerText = `Last sync: ${d.last_updated}`;
         }
-        renderContextModeHourly(d);
+        renderContextModeDaily(d);
       } catch (e) {
         console.error('Failed to load context-mode stats:', e);
       }
     }
 
-    function renderContextModeHourly(d) {
-      const container = document.getElementById('cm-hourly-bars');
+    function formatShortDay(isoDate) {
+      if (!isoDate) return '--';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function formatFullDay(isoDate) {
+      if (!isoDate) return '--';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function renderContextModeDaily(d) {
+      const container = document.getElementById('cm-daily-bars');
       if (!container) return;
       container.innerHTML = '';
 
-      const hourly = Array.isArray(d.hourly) ? d.hourly : [];
-      const hourMap = {};
+      const daily = Array.isArray(d.daily) ? d.daily : [];
+      const totalDays = d.total_days || daily.length;
+      const activeDays = d.active_days || 0;
+      const peakDay = d.peak_day;
+
+      const activeBadge = document.getElementById('cm-active-days-label');
+      if (activeBadge) {
+        activeBadge.innerText = totalDays > 0 ? `${activeDays}d/${totalDays}d active` : '0d active';
+      }
+      const peakBadge = document.getElementById('cm-peak-day-badge');
+      if (peakBadge) {
+        peakBadge.innerText = peakDay ? `Peak: ${formatShortDay(peakDay)}` : 'Peak: --';
+      }
+
+      if (daily.length === 0) {
+        container.innerHTML = '<div class="w-full h-full flex items-center justify-center text-[10px] font-mono swiss-text-muted">No context-mode history yet</div>';
+        return;
+      }
+
       let maxVal = 0;
-      let peakHour = d.peak_hour;
-      hourly.forEach(item => {
-        hourMap[item.hour] = item;
+      daily.forEach(item => {
         const val = item.calls > 0 ? item.calls : 0;
         if (val > maxVal) maxVal = val;
       });
-      // Fallback to session counts if all calls are 0
       const useCalls = maxVal > 0;
       if (!useCalls) {
-        hourly.forEach(item => {
+        daily.forEach(item => {
           if ((item.sessions || 0) > maxVal) maxVal = item.sessions || 0;
         });
       }
       const denom = Math.max(1, maxVal);
 
-      const activeBadge = document.getElementById('cm-active-hours-label');
-      if (activeBadge) {
-        const hrs = d.active_hours || 0;
-        activeBadge.innerText = `${hrs}h/24h active`;
-      }
-      const peakBadge = document.getElementById('cm-peak-hour-badge');
-      if (peakBadge) {
-        if (peakHour !== null && peakHour !== undefined) {
-          const p12 = (peakHour === 0) ? '12 AM' : (peakHour < 12) ? `${peakHour} AM` : (peakHour === 12) ? '12 PM' : `${peakHour - 12} PM`;
-          peakBadge.innerText = `Peak: ${p12}`;
-        } else {
-          peakBadge.innerText = 'Peak: --';
+      const n = daily.length;
+      const labelIndices = new Set([0, n - 1]);
+      if (n >= 6) {
+        const steps = Math.min(4, Math.floor(n / 4));
+        for (let s = 1; s < steps; s++) {
+          const idx = Math.round((s * (n - 1)) / steps);
+          if (idx > 1 && idx < n - 2) labelIndices.add(idx);
         }
       }
 
-      const shortLabels = { 0: '12A', 6: '6A', 12: '12P', 18: '6P' };
+      const colPadding = n > 60 ? '0 0.5px' : n > 35 ? '0 1px' : '0 1.5px';
+      const barMinWidth = n > 90 ? '1px' : '2px';
       const maxBarPx = 38;
       const frag = document.createDocumentFragment();
 
-      for (let h = 0; h < 24; h++) {
-        const item = hourMap[h] || { hour: h, calls: 0, sessions: 0, tokens_saved: 0 };
+      daily.forEach((item, idx) => {
         const calls = item.calls || 0;
         const sessions = item.sessions || 0;
         const saved = item.tokens_saved || 0;
@@ -562,7 +587,7 @@ let currentState = null;
         let barCls = 'cm-bar-empty';
         if (calls > 0) {
           barPx = Math.max(5, Math.round((metric / denom) * maxBarPx));
-          barCls = (h === peakHour) ? 'cm-bar-peak' : 'cm-bar-active';
+          barCls = (item.date === peakDay) ? 'cm-bar-peak' : 'cm-bar-active';
         } else if (sessions > 0) {
           barPx = Math.max(4, useCalls ? 6 : Math.round((sessions / denom) * maxBarPx));
           barCls = 'cm-bar-idle';
@@ -570,12 +595,12 @@ let currentState = null;
 
         const col = document.createElement('div');
         col.className = 'swiss-chart-col group';
+        col.style.padding = colPadding;
 
-        const hour12 = (h === 0) ? '12:00 AM' : (h < 12) ? `${h}:00 AM` : (h === 12) ? '12:00 PM' : `${h - 12}:00 PM`;
         const tip = document.createElement('div');
         tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1 swiss-tooltip text-[10px] font-mono whitespace-nowrap z-30 flex flex-col items-center gap-0.5';
         tip.innerHTML = `
-          <div class="font-bold swiss-text-primary">${hour12}</div>
+          <div class="font-bold swiss-text-primary">${formatFullDay(item.date)}</div>
           <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${sessions} sess)</span></div>
           <div class="swiss-text-secondary text-[9px]">${fmt(saved)} tok shielded</div>
         `;
@@ -584,12 +609,13 @@ let currentState = null;
         bar.className = `swiss-bar ${barCls}`;
         bar.style.height = `${barPx}px`;
         bar.style.maxWidth = '10px';
-        bar.style.minWidth = '2px';
+        bar.style.minWidth = barMinWidth;
 
         const lbl = document.createElement('div');
-        lbl.className = 'h-3.5 flex items-center justify-center w-full select-none mt-0.5';
-        if (shortLabels[h]) {
-          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted leading-none">${shortLabels[h]}</span>`;
+        const alignCls = (idx === 0) ? 'justify-start' : (idx === n - 1) ? 'justify-end' : 'justify-center';
+        lbl.className = `h-3.5 flex items-center ${alignCls} w-full select-none mt-0.5 overflow-visible`;
+        if (labelIndices.has(idx)) {
+          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted leading-none whitespace-nowrap">${formatShortDay(item.date)}</span>`;
         } else {
           lbl.innerHTML = `<span class="text-[7px] swiss-text-muted leading-none">·</span>`;
         }
@@ -598,7 +624,7 @@ let currentState = null;
         col.appendChild(bar);
         col.appendChild(lbl);
         frag.appendChild(col);
-      }
+      });
       container.appendChild(frag);
     }
 

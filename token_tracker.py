@@ -1887,10 +1887,9 @@ def get_context_mode_stats():
     """
     Aggregates statistics from context-mode MCP sessions.
     Returns token savings, bytes sandboxed vs returned, cost avoidance,
-    tool execution breakdown, and 24-hour local-time activity cadence.
+    tool execution breakdown, and all-time daily activity since installation.
     """
     sessions_dir = os.path.join(os.environ.get("USERPROFILE", ""), ".gemini", "context-mode", "sessions")
-    hourly_buckets = [{"hour": h, "calls": 0, "sessions": 0, "tokens_saved": 0} for h in range(24)]
     stats = {
         "active": False,
         "tokens_saved": 0,
@@ -1902,10 +1901,12 @@ def get_context_mode_stats():
         "session_count": 0,
         "active_sessions": 0,
         "by_tool": {},
-        "hourly": hourly_buckets,
-        "peak_hour": None,
+        "daily": [],
+        "peak_day": None,
         "peak_calls": 0,
-        "active_hours": 0,
+        "active_days": 0,
+        "total_days": 0,
+        "install_date": None,
         "last_updated": None
     }
     if not os.path.isdir(sessions_dir):
@@ -1914,6 +1915,8 @@ def get_context_mode_stats():
     files = glob.glob(os.path.join(sessions_dir, "stats-pid-*.json"))
     stats["session_count"] = len(files)
     latest_ts = 0
+    earliest_ts = None
+    parsed_sessions = []
 
     for fpath in files:
         try:
@@ -1940,20 +1943,11 @@ def get_context_mode_stats():
             start_ts = d.get("session_start", 0)
             if up_ts > latest_ts:
                 latest_ts = up_ts
+            for ts_cand in (start_ts, up_ts):
+                if ts_cand > 0 and (earliest_ts is None or ts_cand < earliest_ts):
+                    earliest_ts = ts_cand
 
-            # Bucket session activity by local hour (0..23)
-            ts_ref = up_ts if up_ts > 0 else start_ts
-            if ts_ref > 0:
-                end_dt = datetime.fromtimestamp(ts_ref / 1000.0)
-                h_end = end_dt.hour
-                hourly_buckets[h_end]["sessions"] += 1
-                hourly_buckets[h_end]["calls"] += calls
-                hourly_buckets[h_end]["tokens_saved"] += tok_saved
-                if start_ts > 0 and start_ts < up_ts:
-                    start_dt = datetime.fromtimestamp(start_ts / 1000.0)
-                    h_start = start_dt.hour
-                    if h_start != h_end:
-                        hourly_buckets[h_start]["sessions"] += 1
+            parsed_sessions.append((calls, tok_saved, up_ts, start_ts))
         except Exception:
             continue
 
@@ -1962,19 +1956,56 @@ def get_context_mode_stats():
         stats["reduction_pct"] = round((stats["bytes_sandboxed"] / total_bytes) * 100, 2)
     stats["dollars_saved"] = round(stats["dollars_saved"], 2)
 
-    peak_h = None
-    peak_score = 0
-    active_hrs = 0
-    for b in hourly_buckets:
-        score = b["calls"] if b["calls"] > 0 else (b["sessions"] * 0.01)
-        if b["calls"] > 0 or b["sessions"] > 0:
-            active_hrs += 1
-        if score > peak_score:
-            peak_score = score
-            peak_h = b["hour"]
-    stats["peak_hour"] = peak_h
-    stats["peak_calls"] = hourly_buckets[peak_h]["calls"] if peak_h is not None else 0
-    stats["active_hours"] = active_hrs
+    if earliest_ts is not None:
+        first_date = datetime.fromtimestamp(earliest_ts / 1000.0).date()
+        end_date = datetime.now().date()
+        if latest_ts > 0:
+            latest_date = datetime.fromtimestamp(latest_ts / 1000.0).date()
+            if latest_date > end_date:
+                end_date = latest_date
+
+        stats["install_date"] = first_date.strftime("%Y-%m-%d")
+        num_days = (end_date - first_date).days + 1
+        daily_map = {}
+        daily_buckets = []
+        for offset in range(num_days):
+            d_obj = first_date + timedelta(days=offset)
+            d_key = d_obj.strftime("%Y-%m-%d")
+            bucket = {"date": d_key, "calls": 0, "sessions": 0, "tokens_saved": 0}
+            daily_map[d_key] = bucket
+            daily_buckets.append(bucket)
+
+        for calls, tok_saved, up_ts, start_ts in parsed_sessions:
+            ts_ref = up_ts if up_ts > 0 else start_ts
+            if ts_ref > 0:
+                d_end = datetime.fromtimestamp(ts_ref / 1000.0).date().strftime("%Y-%m-%d")
+                if d_end in daily_map:
+                    daily_map[d_end]["sessions"] += 1
+                    daily_map[d_end]["calls"] += calls
+                    daily_map[d_end]["tokens_saved"] += tok_saved
+                if start_ts > 0 and start_ts < up_ts:
+                    d_start = datetime.fromtimestamp(start_ts / 1000.0).date().strftime("%Y-%m-%d")
+                    if d_start != d_end and d_start in daily_map:
+                        daily_map[d_start]["sessions"] += 1
+
+        peak_day = None
+        peak_score = 0
+        peak_calls = 0
+        active_days = 0
+        for b in daily_buckets:
+            score = b["calls"] if b["calls"] > 0 else (b["sessions"] * 0.01)
+            if b["calls"] > 0 or b["sessions"] > 0:
+                active_days += 1
+            if score > peak_score:
+                peak_score = score
+                peak_day = b["date"]
+                peak_calls = b["calls"]
+
+        stats["daily"] = daily_buckets
+        stats["peak_day"] = peak_day
+        stats["peak_calls"] = peak_calls
+        stats["active_days"] = active_days
+        stats["total_days"] = len(daily_buckets)
 
     if latest_ts > 0:
         stats["last_updated"] = datetime.fromtimestamp(latest_ts / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
