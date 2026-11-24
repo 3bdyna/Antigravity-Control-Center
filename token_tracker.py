@@ -1887,9 +1887,10 @@ def get_context_mode_stats():
     """
     Aggregates statistics from context-mode MCP sessions.
     Returns token savings, bytes sandboxed vs returned, cost avoidance,
-    and tool execution breakdown.
+    tool execution breakdown, and 24-hour local-time activity cadence.
     """
     sessions_dir = os.path.join(os.environ.get("USERPROFILE", ""), ".gemini", "context-mode", "sessions")
+    hourly_buckets = [{"hour": h, "calls": 0, "sessions": 0, "tokens_saved": 0} for h in range(24)]
     stats = {
         "active": False,
         "tokens_saved": 0,
@@ -1901,6 +1902,10 @@ def get_context_mode_stats():
         "session_count": 0,
         "active_sessions": 0,
         "by_tool": {},
+        "hourly": hourly_buckets,
+        "peak_hour": None,
+        "peak_calls": 0,
+        "active_hours": 0,
         "last_updated": None
     }
     if not os.path.isdir(sessions_dir):
@@ -1915,10 +1920,11 @@ def get_context_mode_stats():
             with open(fpath, "r", encoding="utf-8") as f:
                 d = json.load(f)
             calls = d.get("total_calls", 0)
+            tok_saved = d.get("tokens_saved", 0)
             if calls > 0:
                 stats["active"] = True
                 stats["active_sessions"] += 1
-            stats["tokens_saved"] += d.get("tokens_saved", 0)
+            stats["tokens_saved"] += tok_saved
             stats["bytes_sandboxed"] += d.get("bytes_sandboxed", 0)
             stats["bytes_returned"] += d.get("bytes_returned", 0)
             stats["dollars_saved"] += d.get("dollars_saved_session", 0.0)
@@ -1931,8 +1937,23 @@ def get_context_mode_stats():
                 stats["by_tool"][tool]["bytes"] += tdata.get("bytes", 0)
 
             up_ts = d.get("updated_at", 0)
+            start_ts = d.get("session_start", 0)
             if up_ts > latest_ts:
                 latest_ts = up_ts
+
+            # Bucket session activity by local hour (0..23)
+            ts_ref = up_ts if up_ts > 0 else start_ts
+            if ts_ref > 0:
+                end_dt = datetime.fromtimestamp(ts_ref / 1000.0)
+                h_end = end_dt.hour
+                hourly_buckets[h_end]["sessions"] += 1
+                hourly_buckets[h_end]["calls"] += calls
+                hourly_buckets[h_end]["tokens_saved"] += tok_saved
+                if start_ts > 0 and start_ts < up_ts:
+                    start_dt = datetime.fromtimestamp(start_ts / 1000.0)
+                    h_start = start_dt.hour
+                    if h_start != h_end:
+                        hourly_buckets[h_start]["sessions"] += 1
         except Exception:
             continue
 
@@ -1940,6 +1961,20 @@ def get_context_mode_stats():
     if total_bytes > 0:
         stats["reduction_pct"] = round((stats["bytes_sandboxed"] / total_bytes) * 100, 2)
     stats["dollars_saved"] = round(stats["dollars_saved"], 2)
+
+    peak_h = None
+    peak_score = 0
+    active_hrs = 0
+    for b in hourly_buckets:
+        score = b["calls"] if b["calls"] > 0 else (b["sessions"] * 0.01)
+        if b["calls"] > 0 or b["sessions"] > 0:
+            active_hrs += 1
+        if score > peak_score:
+            peak_score = score
+            peak_h = b["hour"]
+    stats["peak_hour"] = peak_h
+    stats["peak_calls"] = hourly_buckets[peak_h]["calls"] if peak_h is not None else 0
+    stats["active_hours"] = active_hrs
 
     if latest_ts > 0:
         stats["last_updated"] = datetime.fromtimestamp(latest_ts / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

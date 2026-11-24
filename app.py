@@ -398,10 +398,16 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def send_json(self, data, status_code=200):
-        body = json.dumps(data).encode("utf-8")
+        raw_body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        accept_enc = self.headers.get("Accept-Encoding", "")
+        use_gzip = "gzip" in accept_enc and len(raw_body) > 2048
+        body = gzip.compress(raw_body, compresslevel=4) if use_gzip else raw_body
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if use_gzip:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self._add_safe_cors_headers()
         self.end_headers()
         self.wfile.write(body)
@@ -461,13 +467,13 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
         if path == "/static/styles.css":
             body = self._get_static_asset("styles.css")
             if body is not None:
-                self.send_static("styles.css", body, "text/css; charset=utf-8")
+                self.send_static("styles.css", body, "text/css; charset=utf-8", cache_control="no-cache")
                 return
 
         if path == "/static/app.js":
             body = self._get_static_asset("app.js")
             if body is not None:
-                self.send_static("app.js", body, "application/javascript; charset=utf-8")
+                self.send_static("app.js", body, "application/javascript; charset=utf-8", cache_control="no-cache")
                 return
 
         if path == "/tailwind.min.js":
@@ -1415,7 +1421,7 @@ def _run_ui_inner():
             profile.setHttpCacheMaximumSize(8 * 1024 * 1024)
 
             self.browser = QWebEngineView()
-            self.browser.page().setBackgroundColor(QColor("#0e0e11"))
+            self.browser.page().setBackgroundColor(QColor("#111110"))
 
             self.interceptor = WindowControlInterceptor(self)
             self.browser.page().profile().setUrlRequestInterceptor(self.interceptor)

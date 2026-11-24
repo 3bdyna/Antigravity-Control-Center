@@ -2,10 +2,17 @@ let currentState = null;
     let currentTab = 'accounts';
     let currentTimeRange = 'month';
     let cachedHeatmapData = null;
+    let cachedHeatmapAccount = null;
+    let cachedHeatmapAt = 0;
     let cachedHourlyData = null;
+    let cachedModelsList = [];
+    let cachedModelsTotal = 0;
+    let showZeroPctModels = false;
     let cachedSessionsList = [];
     let selectedSessionId = null;
     let expandedTurns = new Set();
+    let cachedSessionTurns = [];
+    let cachedTurnsSessionId = null;
 
     // Native Window Dragging on Header
     const header = document.getElementById('header-bar');
@@ -26,46 +33,45 @@ let currentState = null;
     }
 
     function getPercentColor(pct) {
-      if (pct > 50) return 'text-gray-200';
-      if (pct > 20) return 'text-amber-300/85';
-      return 'text-rose-400/85';
+      if (pct > 50) return 'swiss-text-primary';
+      if (pct > 20) return 'text-amber-300';
+      return 'swiss-text-accent';
     }
     function getBarColor(pct) {
-      if (pct > 50) return 'bg-zinc-400';
-      if (pct > 20) return 'bg-amber-400/70';
-      return 'bg-rose-400/70';
+      if (pct > 50) return 'var(--chart-day)';
+      if (pct > 20) return 'var(--amber-text)';
+      return 'var(--accent)';
     }
 
-    // Feature 10: Sleek Toast System
+    // Feature 10: Crisp Swiss Toast System
     function showToast(message, type='info', duration=4000) {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
       
-      let border = 'border-hairline';
-      let icon = '<svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+      let accentBorder = 'border-left: 3px solid var(--border-strong);';
+      let icon = '<svg class="w-4 h-4 swiss-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
       
       if (type === 'success') {
-        border = 'border-hairline-strong bg-surface/95 text-gray-200';
-        icon = '<svg class="w-4 h-4 text-emerald-400/90 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+        accentBorder = 'border-left: 3px solid var(--sage-text);';
+        icon = '<svg class="w-4 h-4 swiss-text-sage shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
       } else if (type === 'error') {
-        border = 'border-rose-900/60 bg-surface/95 text-rose-300';
-        icon = '<svg class="w-4 h-4 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-      } else {
-        border = 'border-hairline-strong bg-surface/95 text-gray-200';
+        accentBorder = 'border-left: 3px solid var(--accent);';
+        icon = '<svg class="w-4 h-4 swiss-text-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
       }
 
-      toast.className = `toast-anim pointer-events-auto px-3.5 py-2 rounded-lg border ${border} shadow-xl backdrop-blur-md flex items-center gap-2.5 text-xs max-w-md`;
+      toast.className = 'toast-anim pointer-events-auto px-3.5 py-2 swiss-tooltip flex items-center gap-2.5 text-xs max-w-md';
+      toast.style.cssText = accentBorder;
       toast.innerHTML = `
         ${icon}
-        <div class="flex-1 font-sans leading-snug">${message}</div>
+        <div class="flex-1 font-sans leading-snug swiss-text-primary">${message}</div>
       `;
 
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateY(10px)';
-        toast.style.transition = 'all 0.25s ease-out';
-        setTimeout(() => toast.remove(), 260);
+        toast.style.transform = 'translateY(8px)';
+        toast.style.transition = 'all 0.2s ease-out';
+        setTimeout(() => toast.remove(), 220);
       }, duration);
     }
 
@@ -128,18 +134,18 @@ let currentState = null;
       return `
         <div class="space-y-1">
           <div class="flex items-center justify-between text-xs leading-none">
-            <span class="text-gray-400 font-medium text-[11px] whitespace-nowrap shrink-0">${label}</span>
+            <span class="swiss-text-secondary font-medium text-[11px] whitespace-nowrap shrink-0">${label}</span>
             <span class="${getPercentColor(rem)} font-bold font-mono text-xs">${rem.toFixed(0)}%</span>
           </div>
-          <div class="h-1.5 w-full bg-surface-3 rounded-full overflow-hidden my-1">
-            <div class="quota-bar-fill h-full ${getBarColor(rem)} rounded-full transition-all duration-300" style="width: ${Math.max(2, rem)}%"></div>
+          <div class="w-full overflow-hidden my-1" style="height: 4px; background-color: var(--bg-well); border-radius: 1px;">
+            <div class="quota-bar-fill h-full" style="width: ${Math.max(2, rem)}%; background-color: ${getBarColor(rem)}; border-radius: 1px;"></div>
           </div>
-          <div class="flex items-center justify-between text-[9.5px] font-mono text-gray-400 leading-none">
-            <span class="text-gray-400 flex items-center shrink-0" title="Time remaining until reset">
-              <svg class="w-2.5 h-2.5 text-gray-500 mr-1.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="flex items-center justify-between text-[9.5px] font-mono swiss-text-muted leading-none">
+            <span class="swiss-text-muted flex items-center shrink-0" title="Time remaining until reset">
+              <svg class="w-2.5 h-2.5 swiss-text-muted mr-1.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span>${delta}</span>
             </span>
-            <span class="text-gray-500 font-medium whitespace-nowrap ml-1 text-right truncate" title="${localTarget ? 'Exact reset time: ' + localTarget : ''}">
+            <span class="swiss-text-muted font-medium whitespace-nowrap ml-1 text-right truncate" title="${localTarget ? 'Exact reset time: ' + localTarget : ''}">
               ${localTarget || 'Immediate'}
             </span>
           </div>
@@ -170,7 +176,7 @@ let currentState = null;
         const rec = recommendations[acc] || {};
 
         const card = document.createElement('div');
-        card.className = `rounded-xl border ${isActive ? 'acc-card acc-card-active' : 'acc-card'} p-4 flex flex-col justify-between min-h-[224px]`;
+        card.className = `${isActive ? 'acc-card acc-card-active' : 'acc-card'} p-4 flex flex-col justify-between min-h-[224px]`;
 
         let badgeHtml = '';
         const badgeLabel = rec.badge_label || (isActive ? 'Active' : (acc === best ? 'Recommended' : 'Standby'));
@@ -178,37 +184,37 @@ let currentState = null;
         const reasonText = rec.reason || (isActive ? 'Active • Quota Healthy' : 'Standby • Ready');
 
         if (badgeColor === 'emerald') {
-          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium text-emerald-400 font-mono">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5 inline-block shrink-0"></span><span>${badgeLabel}</span>
+          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium swiss-text-sage font-mono">
+            <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--sage-text); border-radius: 1px;" aria-hidden="true"></span><span>${badgeLabel}</span>
           </span>`;
         } else if (badgeColor === 'blue' || badgeColor === 'white') {
-          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium text-white font-mono">
-            <span class="w-1.5 h-1.5 rounded-full bg-white mr-1.5 inline-block shrink-0"></span><span>${badgeLabel}</span>
+          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium swiss-text-primary font-mono">
+            <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--text-primary); border-radius: 1px;" aria-hidden="true"></span><span>${badgeLabel}</span>
           </span>`;
         } else if (badgeColor === 'amber') {
-          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium text-amber-400 font-mono">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 inline-block shrink-0"></span><span>${badgeLabel}</span>
+          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium text-amber-300 font-mono">
+            <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--amber-text); border-radius: 1px;" aria-hidden="true"></span><span>${badgeLabel}</span>
           </span>`;
         } else {
-          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium text-gray-400 font-mono">
-            <span class="w-1.5 h-1.5 rounded-full bg-gray-600 mr-1.5 inline-block shrink-0"></span><span>${badgeLabel}</span>
+          badgeHtml = `<span class="inline-flex items-center text-[10.5px] font-medium swiss-text-muted font-mono">
+            <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--text-muted); border-radius: 1px;" aria-hidden="true"></span><span>${badgeLabel}</span>
           </span>`;
         }
 
         let actionBtn = '';
         if (isActive) {
-          actionBtn = `<span class="h-6 px-2.5 rounded text-[11px] font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 flex items-center justify-center cursor-default shrink-0">In Use</span>`;
+          actionBtn = `<span class="swiss-badge swiss-badge-sage h-6 px-2.5 flex items-center justify-center cursor-default shrink-0">In Use</span>`;
         } else {
-          actionBtn = `<button type="button" onclick="switchAccount('${acc}')" class="btn-spring h-6 px-2.5 rounded text-[11px] font-semibold bg-white hover:bg-gray-200 text-gray-950 flex items-center shadow-sm shrink-0">
+          actionBtn = `<button type="button" onclick="switchAccount('${acc}')" class="swiss-btn-accent h-6 px-2.5 text-[11px] font-semibold flex items-center shrink-0">
             <span class="mr-1.5">Switch</span>
-            <svg class="w-3 h-3 text-gray-700 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>`;
         }
 
         let deleteBtn = '';
         if (!isActive) {
-          deleteBtn = `<button type="button" onclick="deleteAccount('${acc}')" title="Delete Account" class="h-6 w-6 rounded hover:bg-surface-2 text-gray-500 hover:text-gray-300 border border-hairline flex items-center justify-center transition-colors shrink-0">
-            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          deleteBtn = `<button type="button" onclick="deleteAccount('${acc}')" title="Delete Account" aria-label="Delete ${acc}" class="swiss-btn h-6 w-6 swiss-text-muted flex items-center justify-center shrink-0">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>`;
         }
 
@@ -217,11 +223,11 @@ let currentState = null;
         if (isDup) {
           const linkedTo = q.duplicate_of || q.google_account || 'another account';
           dupWarning = `
-            <div class="px-2 py-1.5 rounded-md bg-amber-950/40 border border-amber-600/40 text-amber-300 text-[10px] font-mono flex items-center gap-1.5 shadow-sm mt-1">
-              <svg class="w-3.5 h-3.5 shrink-0 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div class="px-2 py-1.5 text-[10px] font-mono flex items-center gap-1.5 mt-1" style="background-color: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 2px; color: var(--amber-text);">
+              <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               <div class="truncate">
-                <span>Linked to <strong class="text-white">${linkedTo}</strong></span>
-                <span class="text-amber-400/80 text-[9px] block font-sans">Shared quota • Re-enroll to isolate</span>
+                <span>Linked to <strong class="swiss-text-primary">${linkedTo}</strong></span>
+                <span class="text-[9px] block font-sans swiss-text-secondary">Shared quota • Re-enroll to isolate</span>
               </div>
             </div>
           `;
@@ -231,13 +237,13 @@ let currentState = null;
           <div class="border-b border-hairline pb-2.5 space-y-1.5">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center min-w-0 flex-1">
-                <div class="w-6 h-6 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white shrink-0 mr-2.5">
-                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="w-6 h-6 swiss-well flex items-center justify-center swiss-text-primary shrink-0 mr-2.5">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
                 </div>
-                <span class="font-mono font-semibold text-xs text-white truncate min-w-0 tracking-tight" title="${acc}">${acc}</span>
+                <span class="font-mono font-semibold text-xs swiss-text-primary truncate min-w-0 tracking-tight" title="${acc}">${acc}</span>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 ${actionBtn}
@@ -246,7 +252,7 @@ let currentState = null;
             </div>
             <div class="flex items-center justify-between text-[10.5px] min-h-[18px]">
               ${badgeHtml}
-              <span class="text-[9.5px] font-mono text-gray-400 truncate max-w-[200px]" title="${reasonText}">${reasonText}</span>
+              <span class="text-[9.5px] font-mono swiss-text-muted truncate max-w-[200px]" title="${reasonText}">${reasonText}</span>
             </div>
             ${dupWarning}
           </div>
@@ -254,8 +260,8 @@ let currentState = null;
           <!-- 2-Column Limits Grid -->
           <div class="grid grid-cols-2 gap-3 pt-2 divide-x divide-hairline">
             <div class="space-y-2">
-              <div class="flex items-center text-[9.5px] font-mono font-semibold uppercase tracking-wider text-gray-400">
-                <span class="w-1.5 h-1.5 rounded-full bg-white mr-1.5 inline-block shrink-0"></span>
+              <div class="flex items-center swiss-micro-label">
+                <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--accent); border-radius: 1px;" aria-hidden="true"></span>
                 <span>Gemini</span>
               </div>
               ${renderQuotaRow('5h Cycle', gemini['5h'])}
@@ -263,9 +269,9 @@ let currentState = null;
             </div>
 
             <div class="space-y-2 pl-3">
-              <div class="flex items-center text-[9.5px] font-mono font-semibold uppercase tracking-wider text-gray-400">
-                <span class="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1.5 inline-block shrink-0"></span>
-                <span>Claude & GPT</span>
+              <div class="flex items-center swiss-micro-label">
+                <span class="status-dot w-1.5 h-1.5 mr-1.5 inline-block shrink-0" style="background-color: var(--chart-day); border-radius: 1px;" aria-hidden="true"></span>
+                <span>Claude &amp; GPT</span>
               </div>
               ${renderQuotaRow('5h Cycle', claude['5h'])}
               ${renderQuotaRow('Weekly', claude['weekly'])}
@@ -465,11 +471,11 @@ let currentState = null;
         const statusBadge = document.getElementById('cm-status-badge');
         if (statusBadge) {
           if (active) {
-            statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Active';
-            statusBadge.className = 'text-[9px] font-mono px-1.5 py-0.5 rounded bg-surface-2 border border-hairline text-gray-300 font-medium flex items-center gap-1';
+            statusBadge.innerHTML = '<span class="status-dot w-1.5 h-1.5 shrink-0" style="background-color: var(--sage-text); border-radius: 1px;" aria-hidden="true"></span><span>Active</span>';
+            statusBadge.className = 'swiss-badge flex items-center gap-1 swiss-text-primary';
           } else {
             statusBadge.innerHTML = 'Idle';
-            statusBadge.className = 'text-[9px] font-mono px-1.5 py-0.5 rounded bg-surface-2 border border-hairline text-gray-400 font-medium flex items-center gap-1';
+            statusBadge.className = 'swiss-badge flex items-center gap-1 swiss-text-muted';
           }
         }
         if (document.getElementById('cm-reduction-pct')) {
@@ -497,9 +503,103 @@ let currentState = null;
         if (document.getElementById('cm-last-updated') && d.last_updated) {
           document.getElementById('cm-last-updated').innerText = `Last sync: ${d.last_updated}`;
         }
+        renderContextModeHourly(d);
       } catch (e) {
         console.error('Failed to load context-mode stats:', e);
       }
+    }
+
+    function renderContextModeHourly(d) {
+      const container = document.getElementById('cm-hourly-bars');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const hourly = Array.isArray(d.hourly) ? d.hourly : [];
+      const hourMap = {};
+      let maxVal = 0;
+      let peakHour = d.peak_hour;
+      hourly.forEach(item => {
+        hourMap[item.hour] = item;
+        const val = item.calls > 0 ? item.calls : 0;
+        if (val > maxVal) maxVal = val;
+      });
+      // Fallback to session counts if all calls are 0
+      const useCalls = maxVal > 0;
+      if (!useCalls) {
+        hourly.forEach(item => {
+          if ((item.sessions || 0) > maxVal) maxVal = item.sessions || 0;
+        });
+      }
+      const denom = Math.max(1, maxVal);
+
+      const activeBadge = document.getElementById('cm-active-hours-label');
+      if (activeBadge) {
+        const hrs = d.active_hours || 0;
+        activeBadge.innerText = `${hrs}h/24h active`;
+      }
+      const peakBadge = document.getElementById('cm-peak-hour-badge');
+      if (peakBadge) {
+        if (peakHour !== null && peakHour !== undefined) {
+          const p12 = (peakHour === 0) ? '12 AM' : (peakHour < 12) ? `${peakHour} AM` : (peakHour === 12) ? '12 PM' : `${peakHour - 12} PM`;
+          peakBadge.innerText = `Peak: ${p12}`;
+        } else {
+          peakBadge.innerText = 'Peak: --';
+        }
+      }
+
+      const shortLabels = { 0: '12A', 6: '6A', 12: '12P', 18: '6P' };
+      const maxBarPx = 38;
+      const frag = document.createDocumentFragment();
+
+      for (let h = 0; h < 24; h++) {
+        const item = hourMap[h] || { hour: h, calls: 0, sessions: 0, tokens_saved: 0 };
+        const calls = item.calls || 0;
+        const sessions = item.sessions || 0;
+        const saved = item.tokens_saved || 0;
+        const metric = useCalls ? calls : sessions;
+
+        let barPx = 2;
+        let barCls = 'cm-bar-empty';
+        if (calls > 0) {
+          barPx = Math.max(5, Math.round((metric / denom) * maxBarPx));
+          barCls = (h === peakHour) ? 'cm-bar-peak' : 'cm-bar-active';
+        } else if (sessions > 0) {
+          barPx = Math.max(4, useCalls ? 6 : Math.round((sessions / denom) * maxBarPx));
+          barCls = 'cm-bar-idle';
+        }
+
+        const col = document.createElement('div');
+        col.className = 'swiss-chart-col group';
+
+        const hour12 = (h === 0) ? '12:00 AM' : (h < 12) ? `${h}:00 AM` : (h === 12) ? '12:00 PM' : `${h - 12}:00 PM`;
+        const tip = document.createElement('div');
+        tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1 swiss-tooltip text-[10px] font-mono whitespace-nowrap z-30 flex flex-col items-center gap-0.5';
+        tip.innerHTML = `
+          <div class="font-bold swiss-text-primary">${hour12}</div>
+          <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${sessions} sess)</span></div>
+          <div class="swiss-text-secondary text-[9px]">${fmt(saved)} tok shielded</div>
+        `;
+
+        const bar = document.createElement('div');
+        bar.className = `swiss-bar ${barCls}`;
+        bar.style.height = `${barPx}px`;
+        bar.style.maxWidth = '10px';
+        bar.style.minWidth = '2px';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'h-3.5 flex items-center justify-center w-full select-none mt-0.5';
+        if (shortLabels[h]) {
+          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted leading-none">${shortLabels[h]}</span>`;
+        } else {
+          lbl.innerHTML = `<span class="text-[7px] swiss-text-muted leading-none">·</span>`;
+        }
+
+        col.appendChild(tip);
+        col.appendChild(bar);
+        col.appendChild(lbl);
+        frag.appendChild(col);
+      }
+      container.appendChild(frag);
     }
 
 async function loadAnalytics() {
@@ -579,13 +679,20 @@ async function loadAnalytics() {
     }
 
     // Feature 1: 52-Week GitHub-style Activity Heatmap
-    async function loadHeatmapData(acc) {
+    async function loadHeatmapData(acc, force=false) {
+      const targetAcc = acc || 'all';
+      const now = Date.now();
+      if (!force && cachedHeatmapData && cachedHeatmapAccount === targetAcc && (now - cachedHeatmapAt < 30000)) {
+        return;
+      }
       try {
-        const res = await fetch(`/api/tokens/heatmap?account=${encodeURIComponent(acc || 'all')}`);
+        const res = await fetch(`/api/tokens/heatmap?account=${encodeURIComponent(targetAcc)}`);
         let data = await res.json();
         if (data && data.heatmap) data = data.heatmap;
         if (data && data.days) data = data.days;
         cachedHeatmapData = Array.isArray(data) ? data : [];
+        cachedHeatmapAccount = targetAcc;
+        cachedHeatmapAt = Date.now();
         renderHeatmapGrid(cachedHeatmapData);
       } catch (e) {
         console.warn('Heatmap endpoint not ready or empty:', e);
@@ -634,14 +741,12 @@ async function loadAnalytics() {
       document.getElementById('heatmap-streak').innerText = `${streak} ${streak === 1 ? 'day' : 'days'}`;
 
       // Build 52 weeks x 7 days grid (364 days ending today)
-      // Sunday is 0, Saturday is 6
       const cellSize = 11;
       const cellGap = 3;
-      const leftPad = 28;
+      const leftPad = 30;
       const topPad = 20;
 
       const endDate = new Date();
-      // Align end to Saturday of current week to make complete column
       const endDayOfWeek = endDate.getDay(); // 0..6
       const startDate = new Date(endDate.getTime() - (51 * 7 + endDayOfWeek) * 86400000);
 
@@ -654,11 +759,15 @@ async function loadAnalytics() {
       svg.setAttribute('viewBox', `0 0 ${totalWidth} ${totalHeight}`);
       svg.setAttribute('class', 'w-full h-auto overflow-visible');
 
-      // Month labels
+      const svgFrag = document.createDocumentFragment();
+      const cellInfoMap = {};
+
+      // Month labels (enforce >= 3 week columns apart to prevent Nov/Dec collision)
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       let lastMonth = -1;
+      let lastMonthCol = -99;
 
-      // Day labels on left
+      // Day labels on left (monospace)
       const dayLabels = [
         { label: 'Mon', row: 1 },
         { label: 'Wed', row: 3 },
@@ -666,29 +775,31 @@ async function loadAnalytics() {
       ];
       dayLabels.forEach(dl => {
         const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x', '4');
+        t.setAttribute('x', '2');
         t.setAttribute('y', topPad + dl.row * (cellSize + cellGap) + cellSize - 2);
-        t.setAttribute('fill', '#6b7280');
+        t.setAttribute('fill', '#76736b');
         t.setAttribute('font-size', '8.5');
-        t.setAttribute('font-family', 'Inter, sans-serif');
+        t.setAttribute('font-family', '"IBM Plex Mono", "Cascadia Mono", Consolas, monospace');
         t.textContent = dl.label;
-        svg.appendChild(t);
+        svgFrag.appendChild(t);
       });
 
       // Generate week columns
       let cur = new Date(startDate.getTime());
       for (let w = 0; w < 52; w++) {
-        // Check if this week starts a new month for label
         const monthIdx = cur.getMonth();
-        if (monthIdx !== lastMonth && w < 50) {
+        if (monthIdx !== lastMonth && w < 50 && (w - lastMonthCol >= 3)) {
           const mt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
           mt.setAttribute('x', leftPad + w * (cellSize + cellGap));
           mt.setAttribute('y', topPad - 6);
-          mt.setAttribute('fill', '#9ca3af');
-          mt.setAttribute('font-size', '9');
-          mt.setAttribute('font-family', 'Inter, sans-serif');
+          mt.setAttribute('fill', '#76736b');
+          mt.setAttribute('font-size', '8.5');
+          mt.setAttribute('font-family', '"IBM Plex Mono", "Cascadia Mono", Consolas, monospace');
           mt.textContent = months[monthIdx];
-          svg.appendChild(mt);
+          svgFrag.appendChild(mt);
+          lastMonth = monthIdx;
+          lastMonthCol = w;
+        } else if (monthIdx !== lastMonth) {
           lastMonth = monthIdx;
         }
 
@@ -699,18 +810,21 @@ async function loadAnalytics() {
           const dateStr = `${y}-${m}-${dayNum}`;
 
           const dayInfo = dayMap[dateStr] || { date: dateStr, total_tokens: 0, turns: 0, top_model: 'None' };
+          cellInfoMap[dateStr] = dayInfo;
           const tok = dayInfo.total_tokens || 0;
 
-          // Color scale
-          let fillColor = '#1a1a20'; // Level 0
-          let strokeColor = '#24242e';
+          // Swiss Studio 5-step sage scale (Levels 0-4)
+          let fillColor = '#1f1e1c'; // Level 0
+          let strokeColor = '#2b2a27';
+          let strokeWidth = '0.5';
           if (tok > 0) {
             const ratio = tok / maxTokens;
-            if (ratio < 0.15) fillColor = '#064e3b';
-            else if (ratio < 0.40) fillColor = '#047857';
-            else if (ratio < 0.70) fillColor = '#059669';
-            else fillColor = '#10b981';
+            if (ratio < 0.15) fillColor = '#1b3b27';      // Level 1
+            else if (ratio < 0.40) fillColor = '#25613d'; // Level 2
+            else if (ratio < 0.70) fillColor = '#36945c'; // Level 3
+            else fillColor = '#52c47e';                   // Level 4
             strokeColor = 'none';
+            strokeWidth = '0';
           }
 
           const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -718,24 +832,33 @@ async function loadAnalytics() {
           rect.setAttribute('y', topPad + d * (cellSize + cellGap));
           rect.setAttribute('width', cellSize);
           rect.setAttribute('height', cellSize);
-          rect.setAttribute('rx', '2');
+          rect.setAttribute('rx', '1');
           rect.setAttribute('fill', fillColor);
           rect.setAttribute('stroke', strokeColor);
+          if (strokeWidth !== '0') rect.setAttribute('stroke-width', strokeWidth);
           rect.setAttribute('class', 'hm-cell');
+          rect.setAttribute('data-date', dateStr);
 
-          // Tooltip interactions
-          rect.addEventListener('mouseenter', (ev) => {
-            showHeatmapTooltip(ev, dayInfo);
-          });
-          rect.addEventListener('mouseleave', () => {
-            hideHeatmapTooltip();
-          });
-
-          svg.appendChild(rect);
+          svgFrag.appendChild(rect);
           cur.setDate(cur.getDate() + 1);
         }
       }
 
+      svg.appendChild(svgFrag);
+
+      // Single delegated tooltip handler (replaces 728 per-cell listeners)
+      svg.addEventListener('mouseover', (ev) => {
+        const target = ev.target;
+        if (target && target.classList && target.classList.contains('hm-cell')) {
+          const info = cellInfoMap[target.getAttribute('data-date')];
+          if (info) showHeatmapTooltip(ev, info);
+        }
+      });
+      svg.addEventListener('mouseout', (ev) => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains('hm-cell')) {
+          hideHeatmapTooltip();
+        }
+      });
       svg.addEventListener('mouseleave', hideHeatmapTooltip);
       container.appendChild(svg);
     }
@@ -752,10 +875,10 @@ async function loadAnalytics() {
       const model = day.top_model || 'None';
 
       tip.innerHTML = `
-        <div class="text-white font-semibold text-xs border-b border-hairline pb-1 mb-1">${day.date}</div>
-        <div class="text-gray-100 font-bold">${fmt(tok)} tokens <span class="text-gray-400 font-normal">(${fmt(turns)} turns)</span></div>
-        <div class="text-gray-400 text-[10px]">In: ${fmt(inp)} • Out: ${fmt(outp)}</div>
-        <div class="text-gray-500 text-[10px] truncate max-w-[170px]">Top: <span class="text-gray-300">${model}</span></div>
+        <div class="swiss-text-primary font-semibold text-xs border-b border-hairline pb-1 mb-1">${day.date}</div>
+        <div class="swiss-text-primary font-bold">${fmt(tok)} tokens <span class="swiss-text-muted font-normal">(${fmt(turns)} turns)</span></div>
+        <div class="swiss-text-secondary text-[10px]">In: ${fmt(inp)} • Out: ${fmt(outp)}</div>
+        <div class="swiss-text-muted text-[10px] truncate max-w-[170px]">Top: <span class="swiss-text-primary">${model}</span></div>
       `;
 
       const tipWidth = 190;
@@ -852,66 +975,67 @@ async function loadAnalytics() {
         21: '9 PM'
       };
 
+      const maxBarPx = 116;
+      const frag = document.createDocumentFragment();
       for (let h = 0; h < 24; h++) {
         const item = hourMap[h] || { hour: h, total_tokens: 0, turns: 0, primary_model: 'None' };
         const tok = item.total_tokens || 0;
-        const hPct = Math.max(3, Math.round((tok / maxTokens) * 78));
+        const barPx = tok > 0 ? Math.max(4, Math.round((tok / maxTokens) * maxBarPx)) : 2;
         const pctOfPeak = maxTokens > 0 ? Math.round((tok / maxTokens) * 100) : 0;
 
         const col = document.createElement('div');
-        col.className = 'flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative cursor-pointer px-[1px]';
+        col.className = 'swiss-chart-col group';
 
         const hour12 = (h === 0) ? '12:00 AM' : (h < 12) ? `${h}:00 AM` : (h === 12) ? '12:00 PM' : `${h - 12}:00 PM`;
         const hour24 = `${String(h).padStart(2, '0')}:00`;
 
-        // Enhanced, clear hover tooltip
+        // Crisp Swiss hover tooltip
         const tip = document.createElement('div');
-        tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-surface-3/95 backdrop-blur text-[10px] font-mono text-white whitespace-nowrap border border-hairline-strong z-30 shadow-xl flex flex-col items-center gap-0.5';
+        tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1 swiss-tooltip text-[10px] font-mono whitespace-nowrap z-30 flex flex-col items-center gap-0.5';
         tip.innerHTML = `
-          <div class="font-bold text-gray-200 flex items-center gap-1.5 border-b border-hairline/60 pb-0.5 mb-0.5">
+          <div class="font-bold swiss-text-primary flex items-center gap-1.5 border-b border-hairline pb-0.5 mb-0.5">
             <span>${hour12}</span>
-            <span class="text-gray-400 text-[9px] font-normal">(${hour24})</span>
+            <span class="swiss-text-muted text-[9px] font-normal">(${hour24})</span>
           </div>
-          <div class="text-gray-200 font-semibold">${fmt(tok)} tokens <span class="text-gray-400 font-normal">(${pctOfPeak}%)</span></div>
-          <div class="text-gray-400 text-[9px]">${item.turns || 0} prompt turns • ${item.primary_model || 'No activity'}</div>
+          <div class="swiss-text-primary font-semibold">${fmt(tok)} tokens <span class="swiss-text-muted font-normal">(${pctOfPeak}%)</span></div>
+          <div class="swiss-text-secondary text-[9px]">${item.turns || 0} prompt turns • ${item.primary_model || 'No activity'}</div>
         `;
 
-        // Bar coloring: Peak is sky-400, Daytime is slate-500, Night is zinc-700
-        let barColor = 'bg-slate-500/70 hover:bg-slate-400 border-slate-400/20';
+        // Bar coloring: Peak is Signal Vermilion (#e55333), Day is #66635b, Night is #2c2b27
+        let barColor = 'swiss-bar-day';
         if (h === peakHour && tok > 0) {
-          barColor = 'bg-sky-400/90 hover:bg-sky-300 border-sky-300/30';
+          barColor = 'swiss-bar-peak';
         } else if (h < 7 || h >= 22) {
-          barColor = 'bg-zinc-700/60 hover:bg-zinc-600 border-zinc-600/20';
+          barColor = 'swiss-bar-night';
         }
 
-        const barWrap = document.createElement('div');
-        barWrap.className = 'w-full flex justify-center items-end';
-        barWrap.style.height = `${hPct}%`;
-
         const bar = document.createElement('div');
-        bar.className = `w-full max-w-[12px] min-w-[2px] h-full ${barColor} rounded-t-sm transition-all border-t border-x`;
-        barWrap.appendChild(bar);
+        bar.className = `swiss-bar ${barColor}`;
+        bar.style.height = `${barPx}px`;
+        bar.style.maxWidth = '12px';
+        bar.style.minWidth = '3px';
 
         const lbl = document.createElement('div');
         lbl.className = 'h-5 flex items-center justify-center w-full select-none';
         if (shortLabels[h]) {
-          lbl.innerHTML = `<span class="text-[8.5px] font-mono text-gray-400 tracking-tight whitespace-nowrap">${shortLabels[h]}</span>`;
+          lbl.innerHTML = `<span class="text-[8.5px] font-mono swiss-text-muted tracking-tight whitespace-nowrap">${shortLabels[h]}</span>`;
         } else {
-          lbl.innerHTML = `<span class="text-[7px] text-gray-600 leading-none">·</span>`;
+          lbl.innerHTML = `<span class="text-[7px] swiss-text-muted leading-none">·</span>`;
         }
 
         col.appendChild(tip);
-        col.appendChild(barWrap);
+        col.appendChild(bar);
         col.appendChild(lbl);
-        container.appendChild(col);
+        frag.appendChild(col);
       }
+      container.appendChild(frag);
     }
 
     function renderSvgChart(timeline) {
       const container = document.getElementById('chart-svg-container');
       container.innerHTML = '';
       if (!timeline || !timeline.length) {
-        container.innerHTML = '<div class="w-full text-center text-xs text-gray-500 py-16 font-mono">No token history recorded for this period.</div>';
+        container.innerHTML = '<div class="w-full text-center text-xs swiss-text-muted py-16 font-mono">No token history recorded for this period.</div>';
         const label = document.getElementById('chart-timeline-label');
         if (label) label.innerText = 'Distribution';
         return;
@@ -928,34 +1052,34 @@ async function loadAnalytics() {
       else if (n >= 14) stride = 3;
       else if (n >= 8) stride = 2;
 
+      const maxBarPx = 116;
+      const frag = document.createDocumentFragment();
       timeline.forEach((item, idx) => {
         const tok = item.total_tokens || 0;
-        // Calculate bar height relative to maximum, leaving room for baseline label (max 78% of column height)
-        const hPct = Math.max(3, Math.round((tok / maxVal) * 78));
+        const isPeak = tok > 0 && tok === maxVal;
+        const barPx = tok > 0 ? Math.max(4, Math.round((tok / maxVal) * maxBarPx)) : 2;
 
         const col = document.createElement('div');
-        col.className = 'flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative cursor-pointer px-[1.5px]';
+        col.className = 'swiss-chart-col group';
 
-        // Floating tooltip
+        // Crisp Swiss hover tooltip
         const tip = document.createElement('div');
-        tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-surface-3/95 backdrop-blur text-[10px] font-mono text-white whitespace-nowrap border border-hairline-strong z-30 shadow-xl flex flex-col items-center gap-0.5';
+        tip.className = 'pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 swiss-tooltip text-[10px] font-mono whitespace-nowrap z-30 flex flex-col items-center gap-0.5';
         tip.innerHTML = `
-          <div class="font-semibold text-gray-200">${item.period}</div>
-          <div class="text-gray-300">${fmt(tok)} tokens (${Math.round((tok / maxVal) * 100)}%)</div>
+          <div class="font-semibold swiss-text-primary">${item.period}</div>
+          <div class="swiss-text-secondary">${fmt(tok)} tokens (${Math.round((tok / maxVal) * 100)}%)</div>
         `;
 
-        // Bar with calm matte fill
-        const barWrap = document.createElement('div');
-        barWrap.className = 'w-full flex justify-center items-end';
-        barWrap.style.height = `${hPct}%`;
-
+        // Bar: Signal Vermilion for peak day, #525049 base for remaining bars (explicit px height)
         const bar = document.createElement('div');
-        bar.className = 'w-full max-w-[14px] min-w-[3px] h-full bg-slate-500/70 group-hover:bg-slate-400 rounded-t-sm transition-all border-t border-x border-slate-400/20';
-        barWrap.appendChild(bar);
+        bar.className = `swiss-bar ${isPeak ? 'swiss-bar-peak' : 'swiss-bar-base'}`;
+        bar.style.height = `${barPx}px`;
+        bar.style.maxWidth = n <= 10 ? '24px' : '14px';
+        bar.style.minWidth = '4px';
 
         // Date label decimation
         const isLabeled = (idx === 0) || (idx === n - 1) || (idx % stride === 0 && idx < n - 2);
-        
+
         let displayLabel = item.period;
         if (item.period && item.period.length === 10) {
           displayLabel = item.period.slice(5); // e.g. "10-02"
@@ -964,52 +1088,93 @@ async function loadAnalytics() {
         const lbl = document.createElement('div');
         lbl.className = 'h-5 flex items-center justify-center w-full select-none';
         if (isLabeled) {
-          lbl.innerHTML = `<span class="text-[9px] font-mono text-gray-400 tracking-tight whitespace-nowrap">${displayLabel}</span>`;
+          lbl.innerHTML = `<span class="text-[9px] font-mono swiss-text-muted tracking-tight whitespace-nowrap">${displayLabel}</span>`;
         } else {
-          lbl.innerHTML = `<span class="text-[7px] text-gray-600 leading-none">·</span>`;
+          lbl.innerHTML = `<span class="text-[7px] swiss-text-muted leading-none">·</span>`;
         }
 
         col.appendChild(tip);
-        col.appendChild(barWrap);
+        col.appendChild(bar);
         col.appendChild(lbl);
-        container.appendChild(col);
+        frag.appendChild(col);
       });
+      container.appendChild(frag);
+    }
+
+    function toggleZeroPctModels() {
+      showZeroPctModels = !showZeroPctModels;
+      renderModelSplit(cachedModelsList, cachedModelsTotal);
     }
 
     function renderModelSplit(models, totalTokens) {
+      cachedModelsList = Array.isArray(models) ? models : [];
+      cachedModelsTotal = totalTokens || 0;
       const list = document.getElementById('model-split-list');
       list.innerHTML = '';
-      if (!models.length) {
-        list.innerHTML = '<div class="text-xs text-gray-500">No model usage recorded.</div>';
+      if (!cachedModelsList.length) {
+        list.innerHTML = '<div class="text-xs swiss-text-muted font-mono">No model usage recorded.</div>';
         return;
       }
-      models.forEach(m => {
-        const pct = totalTokens > 0 ? Math.round((m.total_tokens / totalTokens) * 100) : 0;
+
+      const primaryModels = [];
+      const minorModels = [];
+      cachedModelsList.forEach((m, idx) => {
+        const exactPct = cachedModelsTotal > 0 ? (m.total_tokens / cachedModelsTotal) * 100 : 0;
+        const roundPct = Math.round(exactPct);
+        const entry = { m, idx, exactPct, roundPct };
+        if (roundPct >= 1 || idx === 0) {
+          primaryModels.push(entry);
+        } else {
+          minorModels.push(entry);
+        }
+      });
+
+      const visible = showZeroPctModels ? primaryModels.concat(minorModels) : primaryModels;
+      const frag = document.createDocumentFragment();
+
+      visible.forEach(({ m, idx, exactPct, roundPct }) => {
+        const isTop = idx === 0;
+        const pctLabel = roundPct >= 1 ? `${roundPct}%` : (exactPct >= 0.05 ? `${exactPct.toFixed(1)}%` : '<0.1%');
+        const barWidth = Math.max(exactPct > 0 ? 1 : 0, Math.min(100, exactPct));
         const div = document.createElement('div');
-        div.className = 'space-y-1';
+        div.className = 'space-y-1.5';
         div.innerHTML = `
-          <div class="flex items-center justify-between text-xs">
-            <span class="font-mono text-gray-300 truncate max-w-[160px]">${m.model}</span>
-            <span class="font-mono text-gray-400 font-semibold">${fmt(m.total_tokens)} (${pct}%)</span>
+          <div class="flex items-center justify-between text-xs gap-2">
+            <span class="font-mono ${isTop ? 'swiss-text-primary font-semibold' : 'swiss-text-secondary'} truncate max-w-[160px]" title="${m.model}">${m.model}</span>
+            <span class="font-mono ${isTop ? 'swiss-text-primary font-semibold' : 'swiss-text-muted'} whitespace-nowrap">${fmt(m.total_tokens)} (${pctLabel})</span>
           </div>
-          <div class="h-1.5 w-full bg-surface-3 rounded-full overflow-hidden">
-            <div class="h-full bg-slate-400 rounded-full" style="width: ${pct}%"></div>
+          <div class="swiss-model-track">
+            <div class="${isTop ? 'swiss-model-fill-top' : 'swiss-model-fill-rest'}" style="width: ${barWidth}%"></div>
           </div>
         `;
-        list.appendChild(div);
+        frag.appendChild(div);
       });
+
+      if (minorModels.length > 0) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'swiss-model-toggle';
+        btn.onclick = toggleZeroPctModels;
+        const chevron = showZeroPctModels
+          ? '<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>'
+          : '<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+        btn.innerHTML = `${chevron}<span>${showZeroPctModels ? `Hide ${minorModels.length} low-usage (~0%) models` : `Show ${minorModels.length} low-usage (~0%) models`}</span>`;
+        frag.appendChild(btn);
+      }
+
+      list.appendChild(frag);
     }
 
     function renderEventsTable(events) {
       const tbody = document.getElementById('token-events-tbody');
       tbody.innerHTML = '';
       if (!events.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="py-3 text-center text-gray-500">No recent events found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="py-3 text-center swiss-text-muted">No recent events found.</td></tr>';
         return;
       }
+      const frag = document.createDocumentFragment();
       events.slice(0, 50).forEach(ev => {
         const tr = document.createElement('tr');
-        tr.className = 'hover:bg-surface-2 transition-colors';
         let timeStr = '--';
         if (ev.created_at) {
           try {
@@ -1019,16 +1184,19 @@ async function loadAnalytics() {
             timeStr = ev.created_at.slice(11, 19);
           }
         }
+        const cacheVal = ev.cache_read_tokens || 0;
+        const cacheClass = cacheVal > 0 ? 'swiss-text-accent font-semibold' : 'swiss-text-muted';
         tr.innerHTML = `
-          <td class="py-1.5 px-3 text-gray-400 whitespace-nowrap">${ev.day ? ev.day.slice(5) : ''} ${timeStr}</td>
-          <td class="py-1.5 px-3 text-gray-300 truncate max-w-[130px]" title="${ev.model}">${ev.model}</td>
-          <td class="py-1.5 px-3 text-right text-gray-300">${fmt(ev.input_tokens)}</td>
-          <td class="py-1.5 px-3 text-right text-gray-300">${fmt(ev.output_tokens)}</td>
-          <td class="py-1.5 px-3 text-right text-gray-400">${fmt(ev.cache_read_tokens || 0)}</td>
-          <td class="py-1.5 px-3 text-right font-bold text-gray-100">${fmt(ev.total_tokens)}</td>
+          <td class="swiss-text-muted whitespace-nowrap">${ev.day ? ev.day.slice(5) : ''} ${timeStr}</td>
+          <td class="swiss-text-secondary truncate max-w-[130px]" title="${ev.model}">${ev.model}</td>
+          <td class="text-right swiss-text-secondary">${fmt(ev.input_tokens)}</td>
+          <td class="text-right swiss-text-secondary">${fmt(ev.output_tokens)}</td>
+          <td class="text-right ${cacheClass}">${fmt(cacheVal)}</td>
+          <td class="text-right font-bold swiss-text-primary">${fmt(ev.total_tokens)}</td>
         `;
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       });
+      tbody.appendChild(frag);
     }
 
     function exportTokenData(format) {
@@ -1087,7 +1255,7 @@ async function loadAnalytics() {
     }
 
     function getContextStatus(s) {
-      if (!s) return { dot: '🟢', status: 'Optimal', pct: 0, textClass: 'text-emerald-400' };
+      if (!s) return { tag: 'OK', dotColor: 'var(--sage-text)', status: 'Optimal', pct: 0, textClass: 'swiss-text-sage' };
       const modelStr = (s.model || '').toLowerCase();
       let maxContextLimit = 512000; // Antigravity doubled auto-compaction ceiling (512k tokens)
       if (modelStr.includes('claude')) {
@@ -1095,9 +1263,9 @@ async function loadAnalytics() {
       }
       const currentContext = s.max_context_tokens || s.avg_context_tokens || 0;
       const pct = Math.min(100, (currentContext / maxContextLimit) * 100);
-      if (pct >= 85) return { dot: '🔴', status: 'Near Compaction', pct: pct, textClass: 'text-rose-400' };
-      if (pct >= 60) return { dot: '🟡', status: 'Elevated', pct: pct, textClass: 'text-amber-300' };
-      return { dot: '🟢', status: 'Optimal', pct: pct, textClass: 'text-emerald-400' };
+      if (pct >= 85) return { tag: 'HIGH', dotColor: 'var(--accent)', status: 'Near Compaction', pct: pct, textClass: 'swiss-text-accent' };
+      if (pct >= 60) return { tag: 'MED', dotColor: 'var(--amber-text)', status: 'Elevated', pct: pct, textClass: 'text-amber-300' };
+      return { tag: 'OK', dotColor: 'var(--sage-text)', status: 'Optimal', pct: pct, textClass: 'swiss-text-sage' };
     }
 
     function populateSessionDropdown(sessions) {
@@ -1134,9 +1302,9 @@ async function loadAnalytics() {
           const title = s.title || (s.session_id ? s.session_id.slice(0, 18) + '...' : 'Unknown Session');
           const turns = s.total_turns || 0;
           const st = getContextStatus(s);
-          const compText = s.compactions > 0 ? ` • ⚡${s.compactions} ${s.compactions === 1 ? 'compact' : 'compacts'}` : '';
-          opt.innerText = `${st.dot} ${title} • ${turns} turns${compText}`;
-          opt.title = `${title}\nContext Load: ${st.dot} ${st.pct.toFixed(1)}% (${st.status})\nCapacity: 512k Compaction Limit\nCompactions: ${s.compactions || 0}\nTurns: ${turns}\nID: ${s.session_id}`;
+          const compText = s.compactions > 0 ? ` • ${s.compactions} ${s.compactions === 1 ? 'compact' : 'compacts'}` : '';
+          opt.innerText = `[${st.tag}] ${title} • ${turns} turns${compText}`;
+          opt.title = `${title}\nContext Load: ${st.pct.toFixed(1)}% (${st.status})\nCapacity: 512k Compaction Limit\nCompactions: ${s.compactions || 0}\nTurns: ${turns}\nID: ${s.session_id}`;
           if (s.session_id === selectedSessionId) opt.selected = true;
           groupMain.appendChild(opt);
         });
@@ -1152,9 +1320,9 @@ async function loadAnalytics() {
           const title = s.title || (s.session_id ? s.session_id.slice(0, 18) + '...' : 'Subagent Session');
           const turns = s.total_turns || 0;
           const st = getContextStatus(s);
-          const compText = s.compactions > 0 ? ` • ⚡${s.compactions}` : '';
-          opt.innerText = `${st.dot} ↳ ${title} • ${turns} turns${compText}`;
-          opt.title = `${title}\nContext Load: ${st.dot} ${st.pct.toFixed(1)}% (${st.status})\nCapacity: 512k Compaction Limit\nCompactions: ${s.compactions || 0}\nTurns: ${turns}\nID: ${s.session_id}`;
+          const compText = s.compactions > 0 ? ` • ${s.compactions}c` : '';
+          opt.innerText = `[${st.tag}] ↳ ${title} • ${turns} turns${compText}`;
+          opt.title = `${title}\nContext Load: ${st.pct.toFixed(1)}% (${st.status})\nCapacity: 512k Compaction Limit\nCompactions: ${s.compactions || 0}\nTurns: ${turns}\nID: ${s.session_id}`;
           if (s.session_id === selectedSessionId) opt.selected = true;
           groupSub.appendChild(opt);
         });
@@ -1180,7 +1348,9 @@ async function loadAnalytics() {
       if (!s) return;
       const st = getContextStatus(s);
       const titleElem = document.getElementById('session-title-display');
-      if (titleElem) titleElem.innerText = `${st.dot} ${s.title || s.session_id}`;
+      if (titleElem) {
+        titleElem.innerHTML = `<span class="swiss-dot-inline" style="background-color: ${st.dotColor};" aria-hidden="true"></span><span>${s.title || s.session_id}</span>`;
+      }
       document.getElementById('session-selected-id').innerText = s.session_id;
 
       const subBadge = document.getElementById('session-subagent-badge');
@@ -1200,12 +1370,12 @@ async function loadAnalytics() {
       const compPillEl = document.getElementById('session-compaction-count-pill');
       const compLabel = `${compCount} ${compCount === 1 ? 'Compaction' : 'Compactions'}`;
       if (compTextEl) compTextEl.innerText = compLabel;
-      if (compPillEl) compPillEl.innerText = `⚡ ${compLabel}`;
+      if (compPillEl) compPillEl.innerText = compLabel;
       if (compBadgeEl) {
         if (compCount > 0) {
-          compBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/25 text-purple-300 border border-purple-500/40 font-semibold';
+          compBadgeEl.className = 'swiss-badge swiss-badge-accent gap-1';
         } else {
-          compBadgeEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-surface-2 text-gray-400 border border-hairline font-medium';
+          compBadgeEl.className = 'swiss-badge gap-1';
         }
       }
 
@@ -1232,23 +1402,17 @@ async function loadAnalytics() {
       document.getElementById('session-context-val').innerText = fmt(currentContext);
       
       const statusText = ctxPct < 60 ? 'Optimal' : ctxPct < 85 ? 'Elevated' : 'Near Compaction';
-      const pctColor = ctxPct < 60 ? 'text-gray-200' : ctxPct < 85 ? 'text-amber-300/90' : 'text-rose-400/90';
+      const pctColor = ctxPct < 60 ? 'swiss-text-primary' : ctxPct < 85 ? 'text-amber-300' : 'swiss-text-accent';
       const pctEl = document.getElementById('session-context-pct');
       if (pctEl) {
-        pctEl.className = `${pctColor} font-bold`;
-        pctEl.innerText = `${st.dot} ${ctxPct.toFixed(1)}% of ${ceilingText} (${statusText})`;
+        pctEl.className = `font-mono text-[10.5px] ${pctColor} font-bold`;
+        pctEl.innerText = `${ctxPct.toFixed(1)}% of ${ceilingText} (${statusText})`;
       }
       
       const bar = document.getElementById('session-context-bar');
       if (bar) {
         bar.style.width = `${Math.max(1.5, ctxPct)}%`;
-        if (ctxPct >= 85) {
-          bar.className = 'h-full bg-rose-500/80 rounded-full transition-all duration-500';
-        } else if (ctxPct >= 60) {
-          bar.className = 'h-full bg-amber-500/80 rounded-full transition-all duration-500';
-        } else {
-          bar.className = 'h-full bg-slate-400 rounded-full transition-all duration-500';
-        }
+        bar.style.backgroundColor = ctxPct >= 85 ? 'var(--accent)' : ctxPct >= 60 ? 'var(--amber-text)' : 'var(--chart-day)';
       }
 
       // Cache percentage for session
@@ -1262,7 +1426,10 @@ async function loadAnalytics() {
     async function loadSessionTurns(sid) {
       if (!sid) return;
       const tbody = document.getElementById('session-turns-tbody');
-      tbody.innerHTML = '<tr><td colspan="10" class="py-4 text-center text-gray-500">Loading turns for session...</td></tr>';
+      const isSameSession = (sid === cachedTurnsSessionId);
+      if (!isSameSession) {
+        tbody.innerHTML = '<tr><td colspan="10" class="py-4 text-center text-gray-500">Loading turns for session...</td></tr>';
+      }
 
       try {
         const res = await fetch(`/api/sessions/turns?session_id=${encodeURIComponent(sid)}&limit=100`);
@@ -1270,11 +1437,63 @@ async function loadAnalytics() {
         if (turns && turns.turns) turns = turns.turns;
         const turnList = Array.isArray(turns) ? turns : [];
 
+        cachedTurnsSessionId = sid;
+        cachedSessionTurns = turnList;
         document.getElementById('turns-table-count').innerText = `${turnList.length} steps`;
+        const wrap = tbody.closest('.swiss-table-wrap');
+        const prevScrollTop = (isSameSession && wrap) ? wrap.scrollTop : 0;
         renderSessionTurnsTable(turnList);
+        if (isSameSession && wrap) wrap.scrollTop = prevScrollTop;
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="10" class="py-4 text-center text-rose-400">Failed to load turns: ${e.message}</td></tr>`;
       }
+    }
+
+    function getTurnTypeBadge(turn) {
+      const outp = turn.output_tokens || 0;
+      if (turn.is_compaction) {
+        return `<span class="swiss-badge swiss-badge-accent whitespace-nowrap gap-1"><svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Compaction</span></span>`;
+      }
+      return outp > 0
+        ? `<span class="swiss-badge whitespace-nowrap gap-1"><span class="w-1.5 h-1.5 inline-block" style="background-color: var(--text-primary); border-radius: 1px;" aria-hidden="true"></span><span>Agent Turn</span></span>`
+        : `<span class="swiss-badge swiss-badge-sage whitespace-nowrap gap-1"><span class="w-1.5 h-1.5 inline-block" style="background-color: var(--sage-text); border-radius: 1px;" aria-hidden="true"></span><span>User Prompt</span></span>`;
+    }
+
+    function createTurnDetailRow(turn, stepNum, typeBadge) {
+      const inp = turn.input_tokens || 0;
+      const outp = turn.output_tokens || 0;
+      const cache = turn.cache_read_tokens || 0;
+      const tot = turn.total_tokens || (inp + outp);
+      const badge = typeBadge || getTurnTypeBadge(turn);
+
+      const expTr = document.createElement('tr');
+      expTr.dataset.detailFor = String(stepNum);
+      expTr.style.backgroundColor = 'var(--bg-card)';
+      expTr.innerHTML = `
+        <td colspan="10" class="p-3 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div class="space-y-1">
+              <div class="swiss-text-primary font-semibold text-[11px] flex items-center gap-2">
+                <span>Step ${stepNum} Detailed Volume Breakdown</span>
+                ${badge}
+              </div>
+              <div class="flex items-center gap-3 text-[11px] swiss-text-muted">
+                <span>Prompt: <strong class="swiss-text-primary">${fmt(inp)}</strong> (${tot > 0 ? (inp/tot*100).toFixed(1) : 0}%)</span>
+                <span>Output: <strong class="swiss-text-primary">${fmt(outp)}</strong> (${tot > 0 ? (outp/tot*100).toFixed(1) : 0}%)</span>
+                <span>Cache Hit: <strong class="${cache > 0 ? 'swiss-text-accent' : 'swiss-text-primary'}">${fmt(cache)}</strong></span>
+              </div>
+            </div>
+            <div class="text-[10.5px] font-mono swiss-text-muted">
+              <span>Timestamp: <strong class="swiss-text-primary">${turn.created_at || '--'}</strong></span>
+            </div>
+          </div>
+          <div class="swiss-io-track">
+            <div class="h-full" style="width: ${tot > 0 ? (inp/tot*100) : 50}%; background-color: var(--accent);" title="Input Prompt"></div>
+            <div class="h-full" style="width: ${tot > 0 ? (outp/tot*100) : 50}%; background-color: var(--chart-day);" title="Generated Output"></div>
+          </div>
+        </td>
+      `;
+      return expTr;
     }
 
     function renderSessionTurnsTable(turns) {
@@ -1292,22 +1511,13 @@ async function loadAnalytics() {
         const outp = turn.output_tokens || 0;
         const cache = turn.cache_read_tokens || 0;
         const tot = turn.total_tokens || (inp + outp);
-
-        const isCompaction = Boolean(turn.is_compaction);
-        const isAgent = outp > 0;
-        let typeBadge = isAgent
-          ? `<span class="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/20 font-sans font-medium whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-white"></span>Agent Turn</span>`
-          : `<span class="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-sans font-medium whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>User Prompt</span>`;
-
-        if (isCompaction) {
-          typeBadge = `<span class="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-sans font-semibold whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>⚡ Compaction</span>`;
-        }
+        const typeBadge = getTurnTypeBadge(turn);
 
         const cacheEff = (inp + cache) > 0 ? ((cache / (inp + cache)) * 100) : 0;
-        let badgeColor = 'bg-surface-3 text-gray-400 border-hairline';
+        let badgeClass = 'swiss-badge';
         let badgeText = 'Full Context';
         if (cacheEff > 0) {
-          badgeColor = 'bg-surface-2 text-gray-200 border-hairline';
+          badgeClass = 'swiss-badge swiss-badge-sage';
           badgeText = `${cacheEff.toFixed(0)}% Cached`;
         }
 
@@ -1326,30 +1536,29 @@ async function loadAnalytics() {
 
         // Main Turn Row
         const tr = document.createElement('tr');
+        tr.dataset.step = String(stepNum);
         tr.className = 'hover:bg-surface-2/60 cursor-pointer transition-colors';
-        tr.onclick = (e) => {
-          if (!e.target.closest('button')) toggleTurnExpand(stepNum);
-        };
+        tr.onclick = () => toggleTurnExpand(stepNum, tr, turn);
 
         const isExpanded = expandedTurns.has(stepNum);
 
         tr.innerHTML = `
-          <td class="py-1.5 px-3 text-center font-bold text-gray-400">${stepNum}</td>
-          <td class="py-1.5 px-3 text-gray-400 whitespace-nowrap">${timeStr}</td>
+          <td class="py-1.5 px-3 text-center font-bold swiss-text-muted">${stepNum}</td>
+          <td class="py-1.5 px-3 swiss-text-muted whitespace-nowrap">${timeStr}</td>
           <td class="py-1.5 px-3 text-center">${typeBadge}</td>
-          <td class="py-1.5 px-3 text-gray-200 truncate max-w-[130px]" title="${turn.model}">${modelDisplay}</td>
-          <td class="py-1.5 px-3 text-right text-gray-300">${fmt(inp)}</td>
-          <td class="py-1.5 px-3 text-right text-gray-300">${fmt(outp)}</td>
-          <td class="py-1.5 px-3 text-right text-gray-400">${fmt(cache)}</td>
-          <td class="py-1.5 px-3 text-right font-bold text-gray-100">${fmt(tot)}</td>
+          <td class="py-1.5 px-3 swiss-text-secondary truncate max-w-[130px]" title="${turn.model}">${modelDisplay}</td>
+          <td class="py-1.5 px-3 text-right swiss-text-secondary">${fmt(inp)}</td>
+          <td class="py-1.5 px-3 text-right swiss-text-secondary">${fmt(outp)}</td>
+          <td class="py-1.5 px-3 text-right ${cache > 0 ? 'swiss-text-accent font-semibold' : 'swiss-text-muted'}">${fmt(cache)}</td>
+          <td class="py-1.5 px-3 text-right font-bold swiss-text-primary">${fmt(tot)}</td>
           <td class="py-1.5 px-3 text-center">
-            <span class="text-[9px] px-1.5 py-0.2 rounded border ${badgeColor} font-sans font-medium whitespace-nowrap">
+            <span class="${badgeClass} whitespace-nowrap">
               ${badgeText}
             </span>
           </td>
-          <td class="py-1.5 px-3 text-center text-gray-500">
-            <button type="button" class="p-0.5 hover:text-white rounded hover:bg-surface-3 transition-colors" title="Toggle Detail">
-              <svg class="w-3 h-3 transform transition-transform ${isExpanded ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <td class="py-1.5 px-3 text-center swiss-text-muted">
+            <button type="button" class="p-0.5 hover:text-white transition-colors" title="Toggle Detail" aria-label="Toggle step ${stepNum} detail" aria-expanded="${isExpanded}">
+              <svg class="w-3 h-3 transform transition-transform ${isExpanded ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
           </td>
         `;
@@ -1357,44 +1566,41 @@ async function loadAnalytics() {
 
         // Expandable Detail Drawer Row
         if (isExpanded) {
-          const expTr = document.createElement('tr');
-          expTr.className = 'bg-surface-2/40 border-b border-hairline';
-          expTr.innerHTML = `
-            <td colspan="10" class="p-3 space-y-2">
-              <div class="flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-                <div class="space-y-1">
-                  <div class="text-gray-300 font-semibold text-[11px] flex items-center gap-2">
-                    <span>Step ${stepNum} Detailed Volume Breakdown</span>
-                    ${typeBadge}
-                  </div>
-                  <div class="flex items-center gap-3 text-[11px] text-gray-400">
-                    <span>Prompt: <strong class="text-gray-200">${fmt(inp)}</strong> (${tot > 0 ? (inp/tot*100).toFixed(1) : 0}%)</span>
-                    <span>Output: <strong class="text-gray-200">${fmt(outp)}</strong> (${tot > 0 ? (outp/tot*100).toFixed(1) : 0}%)</span>
-                    <span>Cache Hit: <strong class="text-gray-200">${fmt(cache)}</strong></span>
-                  </div>
-                </div>
-                <div class="text-[10.5px] font-mono text-gray-400">
-                  <span>Timestamp: <strong class="text-gray-200">${turn.created_at || '--'}</strong></span>
-                </div>
-              </div>
-              <div class="h-1.5 w-full bg-surface-3 rounded-full overflow-hidden flex">
-                <div class="h-full bg-slate-500" style="width: ${tot > 0 ? (inp/tot*100) : 50}%" title="Input Prompt"></div>
-                <div class="h-full bg-sky-500" style="width: ${tot > 0 ? (outp/tot*100) : 50}%" title="Generated Output"></div>
-              </div>
-            </td>
-          `;
-          tbody.appendChild(expTr);
+          tbody.appendChild(createTurnDetailRow(turn, stepNum, typeBadge));
         }
       });
     }
 
-    function toggleTurnExpand(stepNum) {
-      if (expandedTurns.has(stepNum)) {
-        expandedTurns.delete(stepNum);
-      } else {
+    function toggleTurnExpand(stepNum, rowEl, turnObj) {
+      const willExpand = !expandedTurns.has(stepNum);
+      if (willExpand) {
         expandedTurns.add(stepNum);
+      } else {
+        expandedTurns.delete(stepNum);
       }
-      loadSessionTurns(selectedSessionId);
+
+      const tbody = document.getElementById('session-turns-tbody');
+      const mainRow = rowEl || (tbody ? tbody.querySelector(`tr[data-step="${stepNum}"]`) : null);
+      if (!mainRow) {
+        if (cachedSessionTurns.length) renderSessionTurnsTable(cachedSessionTurns);
+        return;
+      }
+
+      const btn = mainRow.querySelector('button');
+      if (btn) btn.setAttribute('aria-expanded', String(willExpand));
+      const icon = mainRow.querySelector('button svg');
+      if (icon) icon.classList.toggle('rotate-180', willExpand);
+
+      const nextRow = mainRow.nextElementSibling;
+      const hasDetailRow = nextRow && nextRow.dataset.detailFor === String(stepNum);
+      if (willExpand && !hasDetailRow) {
+        const turn = turnObj || cachedSessionTurns.find((t, i) => (t.step_index !== undefined ? t.step_index : (i + 1)) === stepNum);
+        if (turn) {
+          mainRow.insertAdjacentElement('afterend', createTurnDetailRow(turn, stepNum));
+        }
+      } else if (!willExpand && hasDetailRow) {
+        nextRow.remove();
+      }
     }
 
     async function cleanStaleLocks() {
@@ -1495,9 +1701,11 @@ async function loadAnalytics() {
       function setSseState(connected) {
         const dot = document.getElementById('sse-dot');
         const lbl = document.getElementById('sse-label');
-        if (dot) dot.className = connected
-          ? 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0 mr-2 inline-block'
-          : 'w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mr-2 inline-block';
+        if (dot) {
+          dot.className = 'status-dot w-1.5 h-1.5 shrink-0 mr-2 inline-block';
+          dot.style.backgroundColor = connected ? 'var(--sage-text)' : 'var(--amber-text)';
+          dot.style.borderRadius = '1px';
+        }
         if (lbl) lbl.innerText = connected ? 'Live Sync' : 'Reconnecting';
       }
       function connectSSE() {
