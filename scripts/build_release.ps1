@@ -4,7 +4,8 @@ param(
     [switch]$SkipTests,
     [switch]$SkipBuild,
     [switch]$InstallLocal,
-    [switch]$SkipLocalInstall
+    [switch]$SkipLocalInstall,
+    [switch]$StaticOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +14,49 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $RepoRoot
 
 try {
+    $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\AntigravityControlCenter"
+    $InstalledExe = Join-Path $InstallDir "AntigravityControlCenter.exe"
+    $CompanionScripts = @(
+        "auto_patch_antigravity.js",
+        "antigravity-drag-daemon.js",
+        "antigravity_drag_daemon.pyw",
+        "run_daemon.vbs",
+        "start-drag-daemon.vbs"
+    )
+
+    function Stop-InstalledApp {
+        try {
+            Invoke-RestMethod -Uri "http://127.0.0.1:28795/api/daemon/quit" -Method Post -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+            Start-Sleep -Seconds 2
+        }
+        catch {
+            # Ignore if daemon is not running
+        }
+
+        $RunningProcs = Get-Process -Name "AntigravityControlCenter" -ErrorAction SilentlyContinue
+        if ($RunningProcs) {
+            Write-Host "[Release] Stopping remaining AntigravityControlCenter.exe processes..." -ForegroundColor Yellow
+            $RunningProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+            $RunningProcs | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+        }
+    }
+
+    function Start-InstalledAppDetached {
+        $Launch = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$InstalledExe`"" }
+        if ($Launch.ReturnValue -ne 0) {
+            throw "Failed to relaunch installed app (Win32_Process Create returned $($Launch.ReturnValue))"
+        }
+    }
+
+    function Sync-CompanionScripts {
+        $ScriptsSrcDir = Join-Path $RepoRoot "scripts"
+        foreach ($ScriptName in $CompanionScripts) {
+            $SrcPath = Join-Path $ScriptsSrcDir $ScriptName
+            if (Test-Path $SrcPath) {
+                Copy-Item -Path $SrcPath -Destination (Join-Path $InstallDir $ScriptName) -Force
+            }
+        }
+    }
     # 1. Read APP_VERSION from version.py
     $VersionFile = Join-Path $RepoRoot "version.py"
     if (-not (Test-Path $VersionFile)) {
@@ -72,6 +116,29 @@ try {
         }
     }
 
+    # 3b. Fast Path A: Static/script-only local sync (skips PyInstaller and Inno Setup)
+    if ($InstallLocal -and $StaticOnly -and (-not $Publish) -and (Test-Path $InstalledExe)) {
+        Write-Host "[Release] Fast-syncing static assets and companion scripts to $InstallDir..." -ForegroundColor Cyan
+        Stop-InstalledApp
+
+        $InternalDir = Join-Path $InstallDir "_internal"
+        $TargetStaticDir = if (Test-Path $InternalDir) {
+            Join-Path $InternalDir "static"
+        } else {
+            Join-Path $InstallDir "static"
+        }
+        New-Item -ItemType Directory -Force -Path $TargetStaticDir | Out-Null
+        robocopy (Join-Path $RepoRoot "static") $TargetStaticDir /E /R:2 /W:1 /NP | Out-Host
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy static sync failed with exit code $LASTEXITCODE"
+        }
+
+        Sync-CompanionScripts
+        Start-InstalledAppDetached
+        Write-Host "[Release] Fast static sync complete; app relaunched." -ForegroundColor Green
+        return
+    }
+
     # 4. Build PyInstaller bundle and verify critical artifacts
     $DistAppDir = Join-Path $RepoRoot "dist\AntigravityControlCenter"
     if (-not $SkipBuild) {
@@ -102,6 +169,22 @@ try {
         throw "Missing bundled _ssl.pyd in $DistAppDir (required for HTTPS updater)"
     }
     Write-Host "[Release] Verified PyInstaller bundle (exe, static\index.html, _ssl.pyd)" -ForegroundColor Green
+
+    # 4b. Fast Path B: Local mirror sync without Inno Setup
+    if ($InstallLocal -and (-not $StaticOnly) -and (-not $Publish) -and (Test-Path $InstalledExe)) {
+        Write-Host "[Release] Mirror-syncing PyInstaller bundle to $InstallDir (skipping Inno Setup)..." -ForegroundColor Cyan
+        Stop-InstalledApp
+
+        robocopy $DistAppDir $InstallDir /MIR /R:2 /W:1 /NP /XF unins* | Out-Host
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy bundle mirror failed with exit code $LASTEXITCODE"
+        }
+
+        Sync-CompanionScripts
+        Start-InstalledAppDetached
+        Write-Host "[Release] Local mirror sync complete; app relaunched." -ForegroundColor Green
+        return
+    }
 
     # 5. Locate ISCC.exe and compile Inno Setup 6 installer
     $IsccCmd = Get-Command iscc -ErrorAction SilentlyContinue
@@ -166,20 +249,7 @@ try {
     # 8. Install locally in-place and relaunch when -InstallLocal or -Publish (unless -SkipLocalInstall)
     if ($InstallLocal -or ($Publish -and -not $SkipLocalInstall)) {
         Write-Host "[Release] Updating local installed Antigravity Control Center..." -ForegroundColor Cyan
-        try {
-            Invoke-RestMethod -Uri "http://127.0.0.1:28795/api/daemon/quit" -Method Post -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
-            Start-Sleep -Seconds 2
-        }
-        catch {
-            # Ignore if daemon is not running
-        }
-
-        $RunningProcs = Get-Process -Name "AntigravityControlCenter" -ErrorAction SilentlyContinue
-        if ($RunningProcs) {
-            Write-Host "[Release] Stopping remaining AntigravityControlCenter.exe processes..." -ForegroundColor Yellow
-            $RunningProcs | Stop-Process -Force -ErrorAction SilentlyContinue
-            $RunningProcs | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
-        }
+        Stop-InstalledApp
 
         $InstallerArgs = @(
             "/SILENT",
@@ -194,11 +264,7 @@ try {
             throw "Local installer exited with code $($Proc.ExitCode)"
         }
 
-        $InstalledExe = Join-Path $env:LOCALAPPDATA "Programs\AntigravityControlCenter\AntigravityControlCenter.exe"
-        $Launch = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$InstalledExe`"" }
-        if ($Launch.ReturnValue -ne 0) {
-            throw "Failed to relaunch installed app (Win32_Process Create returned $($Launch.ReturnValue))"
-        }
+        Start-InstalledAppDetached
         Write-Host "[Release] Local installed app updated and relaunched successfully." -ForegroundColor Green
     }
 }

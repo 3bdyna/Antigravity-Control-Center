@@ -602,7 +602,6 @@ span svg + span,
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
   min-width: 0;
 }
 .cm-card {
@@ -615,8 +614,35 @@ span svg + span,
 .opt-chart-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   min-width: 0;
+}
+
+.cm-card > * + *,
+.af-card > * + * {
+  margin-top: 8px;
+}
+.opt-chart-block > * + * {
+  margin-top: 6px;
+}
+.cm-card .gap-1,
+.af-card .gap-1,
+.cm-card .gap-1\.5,
+.af-card .gap-1\.5,
+.cm-card .gap-2,
+.af-card .gap-2 {
+  gap: 0;
+}
+.cm-card .gap-1 > * + *,
+.af-card .gap-1 > * + * {
+  margin-left: 4px;
+}
+.cm-card .gap-1\.5 > * + *,
+.af-card .gap-1\.5 > * + * {
+  margin-left: 6px;
+}
+.cm-card .gap-2 > * + *,
+.af-card .gap-2 > * + * {
+  margin-left: 8px;
 }
 
 .opt-card-footer {
