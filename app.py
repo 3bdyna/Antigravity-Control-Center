@@ -121,6 +121,18 @@ def broadcast_event(event_name="status"):
             pass
 
 
+def _reveal_in_explorer(target_path):
+    """Opens Windows Explorer with target_path selected (best-effort, non-blocking)."""
+    if not target_path or not os.path.exists(target_path):
+        return
+    try:
+        norm = os.path.normpath(target_path)
+        if os.name == "nt":
+            subprocess.Popen(f'explorer /select,"{norm}"')
+    except Exception:
+        pass
+
+
 def broadcast_status_event():
     broadcast_event("status")
 
@@ -865,6 +877,8 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/backup/db":
             res = backup_sqlite_db()
+            if res.get("ok") and res.get("path"):
+                _reveal_in_explorer(res["path"])
             self.send_json(res)
             return
 
@@ -1381,13 +1395,37 @@ def _run_ui_inner():
     ]
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(flags)
 
-    from PyQt5.QtWidgets import QApplication, QMainWindow
-    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile
+    from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
+    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile, QWebEnginePage, QWebEngineSettings
     from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
     from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
-    from PyQt5.QtGui import QIcon, QColor, QCursor
+    from PyQt5.QtGui import QIcon, QColor, QCursor, QDesktopServices
     import ctypes
     from ctypes import wintypes
+
+    class ExternalPopupPage(QWebEnginePage):
+        """Captures window.open('_blank') URLs and forwards them to the default system browser."""
+
+        def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+            if url.isValid() and url.scheme() in ("http", "https"):
+                QDesktopServices.openUrl(url)
+            QTimer.singleShot(0, self.deleteLater)
+            return False
+
+    class ControlCenterWebPage(QWebEnginePage):
+        """Main WebEnginePage supporting external popup delegation for reports."""
+
+        def __init__(self, profile, parent=None):
+            super().__init__(profile, parent)
+            self._popups = []
+
+        def createWindow(self, _win_type):
+            popup = ExternalPopupPage(self.profile(), self)
+            self._popups.append(popup)
+            popup.destroyed.connect(
+                lambda _obj=None, p=popup: self._popups.remove(p) if p in self._popups else None
+            )
+            return popup
 
     class WindowControlInterceptor(QWebEngineUrlRequestInterceptor):
         def __init__(self, win):
@@ -1422,6 +1460,7 @@ def _run_ui_inner():
         def __init__(self, app_icon):
             super().__init__()
             self._revealed = False
+            self._active_downloads = []
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground, False)
             self.setWindowTitle("Antigravity Control Center")
@@ -1453,12 +1492,16 @@ def _run_ui_inner():
             profile.setPersistentStoragePath(cache_dir)
             profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
             profile.setHttpCacheMaximumSize(8 * 1024 * 1024)
+            profile.downloadRequested.connect(self.on_download_requested)
 
             self.browser = QWebEngineView()
-            self.browser.page().setBackgroundColor(QColor("#111110"))
+            self.web_page = ControlCenterWebPage(profile, self.browser)
+            self.browser.setPage(self.web_page)
+            self.web_page.setBackgroundColor(QColor("#111110"))
+            self.browser.settings().setAttribute(QWebEngineSettings.JavascriptCanAccessClipboard, True)
 
             self.interceptor = WindowControlInterceptor(self)
-            self.browser.page().profile().setUrlRequestInterceptor(self.interceptor)
+            profile.setUrlRequestInterceptor(self.interceptor)
             self.setCentralWidget(self.browser)
             self.browser.loadFinished.connect(lambda _ok: self.reveal_window())
             self.browser.load(QUrl(f"http://127.0.0.1:{PORT}"))
@@ -1531,6 +1574,40 @@ def _run_ui_inner():
                 self.showNormal()
             else:
                 self.showMaximized()
+
+        def on_download_requested(self, download):
+            """Prompts for destination and reveals the exported file in Explorer once saved."""
+            suggested = download.suggestedFileName() or download.downloadFileName() or "export.dat"
+            user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+            downloads_dir = os.path.join(user_profile, "Downloads")
+            default_dir = downloads_dir if os.path.isdir(downloads_dir) else user_profile
+            default_path = os.path.join(default_dir, suggested)
+
+            ext = os.path.splitext(suggested)[1].lower()
+            if ext == ".csv":
+                file_filter = "CSV Files (*.csv);;All Files (*)"
+            elif ext == ".json":
+                file_filter = "JSON Files (*.json);;All Files (*)"
+            else:
+                file_filter = "All Files (*)"
+
+            dest_path, _ = QFileDialog.getSaveFileName(self, "Save Export", default_path, file_filter)
+            if not dest_path:
+                download.cancel()
+                return
+
+            download.setDownloadDirectory(os.path.dirname(dest_path))
+            download.setDownloadFileName(os.path.basename(dest_path))
+            self._active_downloads.append(download)
+
+            def _on_finished():
+                if download in self._active_downloads:
+                    self._active_downloads.remove(download)
+                if os.path.exists(dest_path):
+                    _reveal_in_explorer(dest_path)
+
+            download.finished.connect(_on_finished)
+            download.accept()
 
         def on_close_to_tray(self):
             self.close()

@@ -83,8 +83,8 @@ let currentState = null;
         const d = await res.json();
         if (d && d.ok) {
           const sizeKb = d.size_bytes ? ` (${(d.size_bytes / 1024 / 1024).toFixed(2)} MB)` : '';
-          const name = d.filename || 'database.db';
-          showToast(`Snapshot created: <strong>${name}</strong>${sizeKb}`, 'success', 5000);
+          const loc = d.path || d.filename || 'database.db';
+          showToast(`Snapshot saved: <strong>${loc}</strong>${sizeKb}`, 'success', 5500);
         } else {
           showToast(`Backup error: ${d.error || 'Unknown'}`, 'error', 4500);
         }
@@ -97,6 +97,7 @@ let currentState = null;
     function openExecutiveReport() {
       const sel = document.getElementById('analytics-account-select');
       const acc = sel ? sel.value : 'all';
+      showToast('Opening executive report in browser...', 'info', 2500);
       window.open(`/api/export/report?range=${currentTimeRange}&account=${encodeURIComponent(acc)}`, '_blank');
     }
 
@@ -1419,7 +1420,14 @@ async function loadAnalytics() {
     function exportTokenData(format) {
       const sel = document.getElementById('analytics-account-select');
       const acc = sel ? sel.value : 'all';
-      window.open(`/api/tokens/export?format=${format}&range=${currentTimeRange}&account=${encodeURIComponent(acc)}`, '_blank');
+      const url = `/api/tokens/export?format=${format}&range=${currentTimeRange}&account=${encodeURIComponent(acc)}`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast(`Preparing ${format.toUpperCase()} export...`, 'info', 2500);
     }
 
     // ==========================================
@@ -1554,10 +1562,39 @@ async function loadAnalytics() {
       loadSessionTurns(sid);
     }
 
-    function copySessionId() {
-      if (selectedSessionId) {
-        navigator.clipboard.writeText(selectedSessionId);
+    async function copySessionId() {
+      if (!selectedSessionId) return;
+      try {
+        await navigator.clipboard.writeText(selectedSessionId);
         showToast('Session ID copied to clipboard', 'success', 2000);
+      } catch (e) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = selectedSessionId;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          ta.remove();
+          if (ok) {
+            showToast('Session ID copied to clipboard', 'success', 2000);
+          } else {
+            showToast('Failed to copy Session ID', 'error', 3000);
+          }
+        } catch (err) {
+          showToast('Failed to copy Session ID', 'error', 3000);
+        }
+      }
+    }
+
+    async function clearSystemLogs() {
+      try {
+        await fetch('/api/clear-logs', { method: 'POST' });
+        await fetchStatus(false);
+        showToast('System logs cleared', 'info', 2000);
+      } catch (e) {
+        showToast('Failed to clear logs: ' + e.message, 'error', 3000);
       }
     }
 
