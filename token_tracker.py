@@ -1885,11 +1885,16 @@ def generate_executive_html_report(time_range="month", account="all"):
 
 def get_context_mode_stats():
     """
-    Aggregates statistics from context-mode MCP sessions.
+    Aggregates statistics from context-mode MCP sessions, merging:
+      - Legacy v1 JSON session files (~/.gemini/context-mode/sessions/stats-pid-*.json)
+      - Current v2 SQLite project databases (~/.context-mode/projects/*/context.db)
     Returns token savings, bytes sandboxed vs returned, cost avoidance,
     tool execution breakdown, and all-time daily activity since installation.
     """
-    sessions_dir = os.path.join(os.environ.get("USERPROFILE", ""), ".gemini", "context-mode", "sessions")
+    home_dir = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    v1_sessions_dir = os.path.join(home_dir, ".gemini", "context-mode", "sessions")
+    v2_projects_dir = os.path.join(home_dir, ".context-mode", "projects")
+
     stats = {
         "active": False,
         "tokens_saved": 0,
@@ -1909,47 +1914,150 @@ def get_context_mode_stats():
         "install_date": None,
         "last_updated": None
     }
-    if not os.path.isdir(sessions_dir):
-        return stats
 
-    files = glob.glob(os.path.join(sessions_dir, "stats-pid-*.json"))
-    stats["session_count"] = len(files)
     latest_ts = 0
     earliest_ts = None
     parsed_sessions = []
+    v2_daily_rows = []
 
-    for fpath in files:
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            calls = d.get("total_calls", 0)
-            tok_saved = d.get("tokens_saved", 0)
-            if calls > 0:
-                stats["active"] = True
-                stats["active_sessions"] += 1
-            stats["tokens_saved"] += tok_saved
-            stats["bytes_sandboxed"] += d.get("bytes_sandboxed", 0)
-            stats["bytes_returned"] += d.get("bytes_returned", 0)
-            stats["dollars_saved"] += d.get("dollars_saved_session", 0.0)
-            stats["total_calls"] += calls
+    # 1. Legacy v1 JSON session files
+    if os.path.isdir(v1_sessions_dir):
+        v1_files = glob.glob(os.path.join(v1_sessions_dir, "stats-pid-*.json"))
+        stats["session_count"] += len(v1_files)
 
-            for tool, tdata in d.get("by_tool", {}).items():
-                if tool not in stats["by_tool"]:
-                    stats["by_tool"][tool] = {"calls": 0, "bytes": 0}
-                stats["by_tool"][tool]["calls"] += tdata.get("calls", 0)
-                stats["by_tool"][tool]["bytes"] += tdata.get("bytes", 0)
+        for fpath in v1_files:
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                calls = d.get("total_calls", 0)
+                tok_saved = d.get("tokens_saved", 0)
+                if calls > 0:
+                    stats["active"] = True
+                    stats["active_sessions"] += 1
+                stats["tokens_saved"] += tok_saved
+                stats["bytes_sandboxed"] += d.get("bytes_sandboxed", 0)
+                stats["bytes_returned"] += d.get("bytes_returned", 0)
+                stats["dollars_saved"] += d.get("dollars_saved_session", 0.0)
+                stats["total_calls"] += calls
 
-            up_ts = d.get("updated_at", 0)
-            start_ts = d.get("session_start", 0)
-            if up_ts > latest_ts:
-                latest_ts = up_ts
-            for ts_cand in (start_ts, up_ts):
-                if ts_cand > 0 and (earliest_ts is None or ts_cand < earliest_ts):
-                    earliest_ts = ts_cand
+                for tool, tdata in d.get("by_tool", {}).items():
+                    if tool not in stats["by_tool"]:
+                        stats["by_tool"][tool] = {"calls": 0, "bytes": 0}
+                    stats["by_tool"][tool]["calls"] += tdata.get("calls", 0)
+                    stats["by_tool"][tool]["bytes"] += tdata.get("bytes", 0)
 
-            parsed_sessions.append((calls, tok_saved, up_ts, start_ts))
-        except Exception:
-            continue
+                up_ts = d.get("updated_at", 0)
+                start_ts = d.get("session_start", 0)
+                if up_ts > latest_ts:
+                    latest_ts = up_ts
+                for ts_cand in (start_ts, up_ts):
+                    if ts_cand > 0 and (earliest_ts is None or ts_cand < earliest_ts):
+                        earliest_ts = ts_cand
+
+                parsed_sessions.append((calls, tok_saved, up_ts, start_ts))
+            except Exception:
+                continue
+
+    # 2. Current v2 SQLite project databases
+    if os.path.isdir(v2_projects_dir):
+        v2_dbs = glob.glob(os.path.join(v2_projects_dir, "*", "context.db"))
+        for db_path in v2_dbs:
+            conn = None
+            try:
+                uri = f"file:{db_path.replace(os.sep, '/')}?mode=ro"
+                conn = sqlite3.connect(uri, uri=True, timeout=2.0)
+                cur = conn.cursor()
+
+                cur.execute(
+                    """
+                    SELECT
+                        tool,
+                        COUNT(*) AS calls,
+                        COALESCE(SUM(CASE WHEN sandbox_bytes > returned_bytes THEN sandbox_bytes - returned_bytes ELSE 0 END), 0) AS kept_out,
+                        COALESCE(SUM(returned_bytes), 0) AS returned_bytes,
+                        COALESCE(SUM(sandbox_bytes), 0) AS sandbox_bytes,
+                        MIN(created_at) AS min_ts,
+                        MAX(created_at) AS max_ts
+                    FROM events
+                    WHERE tool IS NOT NULL AND tool != 'ctx_stats'
+                    GROUP BY tool
+                    """
+                )
+                rows = cur.fetchall()
+                db_kept_out = 0
+                db_calls = 0
+
+                for tool, calls, kept_out, returned_bytes, sandbox_bytes, min_ts, max_ts in rows:
+                    calls = int(calls or 0)
+                    kept_out = int(kept_out or 0)
+                    returned_bytes = int(returned_bytes or 0)
+                    sandbox_bytes = int(sandbox_bytes or 0)
+                    min_ts = int(min_ts or 0)
+                    max_ts = int(max_ts or 0)
+
+                    db_calls += calls
+                    db_kept_out += kept_out
+                    stats["total_calls"] += calls
+                    stats["bytes_sandboxed"] += kept_out
+                    stats["bytes_returned"] += returned_bytes
+
+                    if tool not in stats["by_tool"]:
+                        stats["by_tool"][tool] = {"calls": 0, "bytes": 0}
+                    stats["by_tool"][tool]["calls"] += calls
+                    stats["by_tool"][tool]["bytes"] += (sandbox_bytes if sandbox_bytes > 0 else returned_bytes)
+
+                    if max_ts > latest_ts:
+                        latest_ts = max_ts
+                    if min_ts > 0 and (earliest_ts is None or min_ts < earliest_ts):
+                        earliest_ts = min_ts
+
+                if db_calls > 0:
+                    stats["active"] = True
+                    v2_tokens = int(round(db_kept_out / 4.0))
+                    stats["tokens_saved"] += v2_tokens
+                    stats["dollars_saved"] += (v2_tokens / 1_000_000.0) * 5.0
+
+                    cur.execute(
+                        "SELECT COUNT(DISTINCT session_id) FROM events WHERE tool IS NOT NULL AND tool != 'ctx_stats'"
+                    )
+                    sess_row = cur.fetchone()
+                    sess_cnt = int(sess_row[0] or 0) if sess_row else 0
+                    stats["session_count"] += sess_cnt
+                    stats["active_sessions"] += sess_cnt
+
+                    cur.execute(
+                        """
+                        SELECT
+                            date(created_at / 1000, 'unixepoch', 'localtime') AS day,
+                            COUNT(*) AS calls,
+                            COUNT(DISTINCT session_id) AS sessions,
+                            COALESCE(SUM(CASE WHEN sandbox_bytes > returned_bytes THEN sandbox_bytes - returned_bytes ELSE 0 END), 0) AS kept_out
+                        FROM events
+                        WHERE tool IS NOT NULL AND tool != 'ctx_stats' AND created_at > 0
+                        GROUP BY day
+                        """
+                    )
+                    for day_str, d_calls, d_sessions, d_kept in cur.fetchall():
+                        if day_str:
+                            v2_daily_rows.append((
+                                day_str,
+                                int(d_calls or 0),
+                                int(d_sessions or 0),
+                                int(round((d_kept or 0) / 4.0))
+                            ))
+            except Exception:
+                continue
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+    if stats["by_tool"]:
+        stats["by_tool"] = dict(
+            sorted(stats["by_tool"].items(), key=lambda kv: kv[1].get("calls", 0), reverse=True)
+        )
 
     total_bytes = stats["bytes_sandboxed"] + stats["bytes_returned"]
     if total_bytes > 0:
@@ -1987,6 +2095,12 @@ def get_context_mode_stats():
                     d_start = datetime.fromtimestamp(start_ts / 1000.0).date().strftime("%Y-%m-%d")
                     if d_start != d_end and d_start in daily_map:
                         daily_map[d_start]["sessions"] += 1
+
+        for day_str, d_calls, d_sessions, d_tok_saved in v2_daily_rows:
+            if day_str in daily_map:
+                daily_map[day_str]["calls"] += d_calls
+                daily_map[day_str]["sessions"] += d_sessions
+                daily_map[day_str]["tokens_saved"] += d_tok_saved
 
         peak_day = None
         peak_score = 0
