@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller build outputs
+build/
+dist/
+
+# Backups & temp files
+*.bak
+*.log
+*.tmp
+temp_test.html
+
+# Local SQLite / runtime data (lives in ~/.gemini/antigravity-switcher)
+*.db
+*.db-wal
+*.db-shm
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/

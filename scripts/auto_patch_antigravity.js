@@ -1,0 +1,1218 @@
+const fs = require('fs');
+
+const path = require('path');
+
+const os = require('os');
+
+const { execSync } = require('child_process');
+
+
+
+const ASAR_PATH = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources', 'app.asar');
+
+const UNPACKED_PATH = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources', 'app.asar.unpacked');
+
+const UPDATER_DIR = path.join(process.env.LOCALAPPDATA, 'antigravity-updater');
+
+const MARKER = 'initAntigravityQuotaIndicator';
+
+
+
+function isAlreadyPatched() {
+
+    if (!fs.existsSync(ASAR_PATH)) return false;
+
+    try {
+
+        const buf = fs.readFileSync(ASAR_PATH);
+
+        return buf.includes(Buffer.from(MARKER)) &&
+               buf.includes(Buffer.from('lastValidStatus')) &&
+               buf.includes(Buffer.from('control-center:ensure-daemon')) &&
+               !buf.includes(Buffer.from("'http://127.0.0.1:28795/'"));
+
+    } catch (e) {
+
+        return false;
+
+    }
+
+}
+
+
+
+function cleanUpdaterCache() {
+    // Preserved for official Google Antigravity auto-updates. Never delete updater files.
+    return;
+}
+
+
+
+const PRELOAD_INJECTION = `
+
+// --- Antigravity Active Account Quota Top-Bar Indicator ---
+
+(function initAntigravityQuotaIndicator() {
+    window.__agQuotaIndicatorRunning = true;
+
+    function getDotColor(pct) {
+
+        if (pct === null || pct === undefined || isNaN(pct)) return '#94a3b8';
+
+        if (pct >= 50) return '#22c55e';
+
+        if (pct >= 20) return '#f59e0b';
+
+        return '#ef4444';
+
+    }
+
+
+
+    async function openControlCenter(e) {
+
+        if (e) {
+
+            e.stopPropagation();
+
+            e.preventDefault();
+
+        }
+
+        if (window.__agOpeningCC && (Date.now() - window.__agOpeningCC < 600)) {
+            return;
+        }
+        window.__agOpeningCC = Date.now();
+
+        const btn = document.getElementById('ag-btn-control-center');
+
+        if (btn) {
+
+            btn.style.transform = 'scale(0.92)';
+
+            setTimeout(() => { btn.style.transform = 'scale(1)'; }, 150);
+
+        }
+
+        // 1. Direct daemon API call to show/restore native GUI
+        try {
+            const resp = await fetch('http://127.0.0.1:28795/api/open-ui', { cache: 'no-store' });
+            if (resp && resp.ok) return;
+        } catch (_) {}
+
+        // 2. Main process IPC handler (spawns native exe directly, never opens a browser tab)
+        try {
+            if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer) {
+                const opened = await electron_1.ipcRenderer.invoke('control-center:open');
+                if (opened) return;
+            }
+        } catch (_) {}
+
+        // 3. Fallback: launch native Control Center via registered Windows URL protocol (never opens a browser tab)
+        try {
+            if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer) {
+                await electron_1.ipcRenderer.invoke('shell:open-external', 'antigravity-cc://open');
+            }
+        } catch (_) {}
+
+    }
+
+
+
+    function ensureStyles() {
+
+        if (document.getElementById('ag-quota-styles')) return;
+
+        const style = document.createElement('style');
+
+        style.id = 'ag-quota-styles';
+
+        style.textContent = \`
+
+            /* Window Draggable Titlebar & Topbar Areas */
+
+            [class*="@container/titlebar"],
+
+            .shrink-0:has(> [class*="@container/titlebar"]),
+
+            .bg-sidebar > .shrink-0,
+
+            #ag-quota-pill {
+
+                -webkit-app-region: drag !important;
+
+            }
+
+
+
+            /* Interactive Elements inside Draggable Areas */
+
+            [class*="@container/titlebar"] button,
+
+            [class*="@container/titlebar"] input,
+
+            [class*="@container/titlebar"] a,
+
+            [class*="@container/titlebar"] [role="button"],
+
+            [class*="@container/titlebar"] [class*="cursor-pointer"],
+
+            .bg-sidebar > .shrink-0 button,
+
+            .bg-sidebar > .shrink-0 [role="button"],
+
+            #ag-btn-control-center,
+
+            [style*="no-drag"] {
+
+                -webkit-app-region: no-drag !important;
+
+            }
+
+
+
+            #ag-quota-pill {
+
+                max-width: calc(100vw - 320px);
+
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+            }
+
+            .ag-badge-5h {
+
+                display: inline-flex;
+
+                align-items: center;
+
+                gap: 3px;
+
+                background: rgba(255, 255, 255, 0.08);
+
+                padding: 1px 5px;
+
+                border-radius: 4px;
+
+                border: 1px solid rgba(255, 255, 255, 0.08);
+
+            }
+
+            .ag-badge-wk {
+
+                display: inline-flex;
+
+                align-items: center;
+
+                gap: 3px;
+
+                background: rgba(255, 255, 255, 0.04);
+
+                padding: 1px 5px;
+
+                border-radius: 4px;
+
+                border: 1px solid rgba(255, 255, 255, 0.06);
+
+            }
+
+            @media (max-width: 1200px) {
+
+                #ag-quota-pill {
+
+                    left: auto !important;
+
+                    right: 140px !important;
+
+                    transform: none !important;
+
+                }
+
+            }
+
+            @media (max-width: 950px) {
+
+                .ag-btn-text { display: none !important; }
+
+                .ag-acct-text { max-width: 70px !important; }
+
+                #ag-quota-pill {
+
+                    left: auto !important;
+
+                    right: 140px !important;
+
+                    transform: none !important;
+
+                    gap: 5px !important;
+
+                    padding: 0 6px 0 8px !important;
+
+                }
+
+            }
+
+            @media (max-width: 820px) {
+
+                #ag-quota-pill {
+
+                    left: auto !important;
+
+                    right: 140px !important;
+
+                    transform: none !important;
+
+                    gap: 4px !important;
+
+                    padding: 0 5px 0 6px !important;
+
+                }
+
+                .ag-badge-wk { display: none !important; }
+
+            }
+
+            @media (max-width: 600px) {
+
+                #ag-quota-pill {
+
+                    right: 135px !important;
+
+                    gap: 3px !important;
+
+                }
+
+                .ag-acct-text { max-width: 50px !important; }
+
+            }
+
+        \`;
+
+        const target = document.head || document.documentElement;
+
+        if (target) target.appendChild(style);
+
+    }
+
+
+
+    function ensurePillElement() {
+
+        ensureStyles();
+
+        let el = document.getElementById('ag-quota-pill');
+
+        if (el && document.body && document.body.contains(el)) {
+
+            return el;
+
+        }
+
+        if (!document.body) return null;
+
+
+
+        if (!el) {
+
+            el = document.createElement('div');
+
+            el.id = 'ag-quota-pill';
+
+            // Centered in top bar: left 50% with translateX(-50%)
+
+            el.style.cssText = [
+
+                'position: fixed',
+
+                'top: 4px',
+
+                'left: 50%',
+
+                'transform: translateX(-50%)',
+
+                'height: 24px',
+
+                'z-index: 99999',
+
+                'user-select: none',
+
+                'display: inline-flex',
+
+                'align-items: center',
+
+                'gap: 7px',
+
+                'padding: 0 8px 0 10px',
+
+                'border-radius: 12px',
+
+                'background: rgba(30, 32, 38, 0.94)',
+
+                'backdrop-filter: blur(8px)',
+
+                '-webkit-backdrop-filter: blur(8px)',
+
+                'border: 1px solid rgba(255, 255, 255, 0.15)',
+
+                'color: #f1f5f9',
+
+                'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+
+                'font-size: 11.5px',
+
+                'line-height: 1',
+
+                'box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35)',
+
+                'cursor: pointer',
+
+                'transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease',
+
+                'box-sizing: border-box',
+
+                'pointer-events: auto'
+
+            ].join(';') + ';';
+
+
+
+            el.addEventListener('mouseenter', () => {
+
+                el.style.background = 'rgba(45, 48, 56, 0.98)';
+
+                el.style.borderColor = 'rgba(255, 255, 255, 0.28)';
+
+            });
+
+
+
+            el.addEventListener('mouseleave', () => {
+
+                el.style.background = 'rgba(30, 32, 38, 0.94)';
+
+                el.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+
+            });
+
+
+
+            el.addEventListener('click', (e) => {
+
+                openControlCenter(e);
+
+            });
+
+        }
+
+
+
+        if (!document.body.contains(el)) {
+
+            document.body.appendChild(el);
+
+        }
+
+        return el;
+
+    }
+
+
+
+    let lastValidStatus = window.__agLastValidStatus || null;
+    let isFetching = false;
+    let lastEnsureDaemonCall = 0;
+
+    function triggerEnsureDaemon() {
+        const now = Date.now();
+        if (now - lastEnsureDaemonCall < 10000) return;
+        lastEnsureDaemonCall = now;
+        try {
+            if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer) {
+                electron_1.ipcRenderer.invoke('control-center:ensure-daemon').catch(() => {});
+            }
+        } catch (_) {}
+    }
+
+    async function updateQuota() {
+        if (isFetching) return;
+        isFetching = true;
+        try {
+            let status = null;
+
+            // 1. Live status from Control Center daemon
+            try {
+                const resp = await fetch('http://127.0.0.1:28795/api/status', { cache: 'no-store' });
+                if (resp && resp.ok) {
+                    const data = await resp.json();
+                    if (data && data.active) {
+                        status = data;
+                        lastValidStatus = data;
+                        window.__agLastValidStatus = data;
+                    }
+                }
+            } catch (_) {
+                triggerEnsureDaemon();
+            }
+
+            // 2. In-memory cache continuity: if daemon is busy/refreshing, never flip to old stale accounts
+            if (!status && lastValidStatus) {
+                status = lastValidStatus;
+            }
+
+            const pill = ensurePillElement();
+            if (!pill) return;
+
+            if (!status || !status.active) {
+                if (pill.dataset.hasRendered === 'true') {
+                    return;
+                }
+                pill.innerHTML = [
+                    '<span style="color:#94a3b8;font-size:11px;">⚡ Quota Syncing...</span>',
+                    '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+                    '<button id="ag-btn-control-center" style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);border-radius:6px;color:#f8fafc;font-family:inherit;font-size:10.5px;font-weight:600;padding:1px 7px;height:18px;cursor:pointer;-webkit-app-region:no-drag;pointer-events:auto;outline:none;">⚙️ <span class="ag-btn-text">Control</span></button>'
+                ].join('');
+                pill.title = 'Antigravity Quota: Waiting for switchboard status...\\nClick button to open Control Center';
+                attachButtonHandler();
+                return;
+            }
+
+            pill.dataset.hasRendered = 'true';
+
+
+
+            const activeAccount = status.active;
+
+            const shortName = activeAccount.includes('@') ? activeAccount.split('@')[0] : activeAccount;
+
+            const quotaData = (status.quotas && status.quotas[activeAccount]) ? status.quotas[activeAccount] : null;
+
+
+
+            let gemini5h = null;
+
+            let gemini5hDelta = '';
+
+            let geminiWeekly = null;
+
+            let geminiWeeklyDelta = '';
+
+
+
+            let claude5h = null;
+
+            let claude5hDelta = '';
+
+            let claudeWeekly = null;
+
+            let claudeWeeklyDelta = '';
+
+
+
+            if (quotaData) {
+
+                if (quotaData.gemini) {
+
+                    if (quotaData.gemini['5h']) {
+
+                        gemini5h = quotaData.gemini['5h'].remaining;
+
+                        gemini5hDelta = quotaData.gemini['5h'].resetDelta || '';
+
+                    }
+
+                    if (quotaData.gemini['weekly']) {
+
+                        geminiWeekly = quotaData.gemini['weekly'].remaining;
+
+                        geminiWeeklyDelta = quotaData.gemini['weekly'].resetDelta || '';
+
+                    }
+
+                }
+
+                if (quotaData.claude) {
+
+                    if (quotaData.claude['5h']) {
+
+                        claude5h = quotaData.claude['5h'].remaining;
+
+                        claude5hDelta = quotaData.claude['5h'].resetDelta || '';
+
+                    }
+
+                    if (quotaData.claude['weekly']) {
+
+                        claudeWeekly = quotaData.claude['weekly'].remaining;
+
+                        claudeWeeklyDelta = quotaData.claude['weekly'].resetDelta || '';
+
+                    }
+
+                }
+
+            } else if (status.gemini !== undefined || status.claude !== undefined) {
+
+                gemini5h = status.gemini;
+
+                claude5h = status.claude;
+
+                gemini5hDelta = status.geminiDelta || '';
+
+                claude5hDelta = status.claudeDelta || '';
+
+                geminiWeekly = status.geminiWeekly ?? null;
+
+                claudeWeekly = status.claudeWeekly ?? null;
+
+                geminiWeeklyDelta = status.geminiWeeklyDelta || '';
+
+                claudeWeeklyDelta = status.claudeWeeklyDelta || '';
+
+            }
+
+
+
+            const gMin = Math.min(gemini5h ?? 100, geminiWeekly ?? 100);
+
+            const cMin = Math.min(claude5h ?? 100, claudeWeekly ?? 100);
+
+
+
+            const gColor = getDotColor(gMin);
+
+            const cColor = getDotColor(cMin);
+
+
+
+            const gVal = gemini5h !== null ? Math.round(gemini5h) + '%' : '--';
+
+            const cVal = claude5h !== null ? Math.round(claude5h) + '%' : '--';
+
+
+
+            const gWVal = geminiWeekly !== null ? Math.round(geminiWeekly) + '%' : '--';
+
+            const cWVal = claudeWeekly !== null ? Math.round(claudeWeekly) + '%' : '--';
+
+
+
+            pill.innerHTML = [
+
+                // Account Badge
+
+                '<span style="display:inline-flex;align-items:center;gap:4px;color:#cbd5e1;font-weight:600;">',
+
+                '  <span style="font-size:11px;opacity:0.85;">👤</span>',
+
+                '  <span class="ag-acct-text" style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;">' + shortName + '</span>',
+
+                '</span>',
+
+                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+
+
+
+                // Gemini Segment
+                '<div style="display:inline-flex;align-items:center;gap:5px;">',
+                '  <span style="font-weight:700;color:#ffffff;font-size:11px;">G</span>',
+                '  <span class="ag-badge-5h" title="Gemini 5h cycle remaining">',
+                '    <span style="font-weight:700;color:#f8fafc;font-size:11px;">' + gVal + '</span>',
+                '    <span style="color:#94a3b8;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (gemini5hDelta || '--') + '</span>',
+                '  </span>',
+                '  <span class="ag-badge-wk" title="Gemini Weekly quota remaining">',
+                '    <span style="color:#64748b;font-size:9px;font-weight:700;">W</span>',
+                '    <span style="font-weight:600;color:#cbd5e1;font-size:11px;">' + gWVal + '</span>',
+                '    <span style="color:#64748b;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (geminiWeeklyDelta || '--') + '</span>',
+                '  </span>',
+                '</div>',
+                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+
+                // Claude Segment
+                '<div style="display:inline-flex;align-items:center;gap:5px;">',
+                '  <span style="font-weight:700;color:#cbd5e1;font-size:11px;">C</span>',
+                '  <span class="ag-badge-5h" title="Claude 5h cycle remaining">',
+                '    <span style="font-weight:700;color:#f8fafc;font-size:11px;">' + cVal + '</span>',
+                '    <span style="color:#94a3b8;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (claude5hDelta || '--') + '</span>',
+                '  </span>',
+                '  <span class="ag-badge-wk" title="Claude Weekly quota remaining">',
+                '    <span style="color:#64748b;font-size:9px;font-weight:700;">W</span>',
+                '    <span style="font-weight:600;color:#cbd5e1;font-size:11px;">' + cWVal + '</span>',
+
+                '    <span style="color:#64748b;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (claudeWeeklyDelta || '--') + '</span>',
+
+                '  </span>',
+
+                '</div>',
+
+                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+
+
+
+                // Control Center Button
+
+                '<button id="ag-btn-control-center" style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.22);border-radius:6px;color:#f8fafc;font-family:inherit;font-size:10.5px;font-weight:600;padding:1px 7px;height:18px;cursor:pointer;-webkit-app-region:no-drag;pointer-events:auto;outline:none;transition:all 0.15s ease;" title="Click to open Antigravity Control Center">',
+
+                '  <span style="font-size:10px;opacity:0.9;">⚙️</span>',
+
+                '  <span class="ag-btn-text">Control</span>',
+
+                '</button>'
+
+            ].join('');
+
+
+
+            let tip = 'Active Account: ' + activeAccount + '\\n';
+
+            if (gemini5h !== null) tip += '• Gemini (5h cycle): ' + gemini5h.toFixed(1) + '% (Resets in ' + (gemini5hDelta || 'N/A') + ')\\n';
+
+            if (geminiWeekly !== null) tip += '• Gemini (Weekly): ' + geminiWeekly.toFixed(1) + '% (Resets in ' + (geminiWeeklyDelta || 'N/A') + ')\\n';
+
+            if (claude5h !== null) tip += '• Claude (5h cycle): ' + claude5h.toFixed(1) + '% (Resets in ' + (claude5hDelta || 'N/A') + ')\\n';
+
+            if (claudeWeekly !== null) tip += '• Claude (Weekly): ' + claudeWeekly.toFixed(1) + '% (Resets in ' + (claudeWeeklyDelta || 'N/A') + ')\\n';
+
+            tip += '\\n👉 Click [⚙️ Control] to launch';
+
+
+
+            pill.title = tip;
+            attachButtonHandler();
+        } catch (_) {}
+        finally {
+            isFetching = false;
+        }
+    }
+
+    window.__agUpdateQuota = updateQuota;
+
+
+
+    function attachButtonHandler() {
+
+        const btn = document.getElementById('ag-btn-control-center');
+
+        if (btn && !btn.dataset.bound) {
+
+            btn.dataset.bound = 'true';
+
+            btn.addEventListener('mouseenter', () => {
+
+                btn.style.background = 'rgba(255, 255, 255, 0.2)';
+
+                btn.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+
+            });
+
+            btn.addEventListener('mouseleave', () => {
+
+                btn.style.background = 'rgba(255, 255, 255, 0.1)';
+
+                btn.style.borderColor = 'rgba(255, 255, 255, 0.22)';
+
+            });
+
+            btn.addEventListener('click', (e) => {
+
+                openControlCenter(e);
+
+            });
+
+        }
+
+    }
+
+
+
+    function startMonitor() {
+        triggerEnsureDaemon();
+        ensurePillElement();
+        updateQuota();
+        if (window.__agQuotaInterval) clearInterval(window.__agQuotaInterval);
+        if (window.__agPillInterval) clearInterval(window.__agPillInterval);
+        window.__agQuotaInterval = setInterval(updateQuota, 4000);
+        window.__agPillInterval = setInterval(ensurePillElement, 2000);
+    }
+
+
+
+    if (document.readyState === 'loading') {
+
+        window.addEventListener('DOMContentLoaded', startMonitor);
+
+    } else {
+
+        startMonitor();
+
+    }
+
+})();
+
+`;
+
+
+
+function applyDiskPatch(force = false) {
+
+    if (!fs.existsSync(ASAR_PATH)) {
+
+        console.error('Antigravity app.asar not found at: ' + ASAR_PATH);
+
+        return false;
+
+    }
+
+
+
+    if (!force && isAlreadyPatched()) {
+
+        console.log('[AutoPatcher] Already patched. Nothing to do.');
+
+        return true;
+
+    }
+
+
+
+    console.log('[AutoPatcher] Applying beautiful micro-badge top-bar patch...');
+
+
+
+    const tempDir = path.join(os.tmpdir(), 'ag_asar_patch_' + Date.now());
+
+    const patchedAsar = path.join(os.tmpdir(), 'patched_app_' + Date.now() + '.asar');
+
+
+
+    try {
+
+        // 1. Extract
+
+        execSync(`npx --yes asar extract "${ASAR_PATH}" "${tempDir}"`, { stdio: 'ignore' });
+
+
+
+        // 2. Patch preload.js
+
+        const preloadPath = path.join(tempDir, 'dist', 'preload.js');
+
+        if (fs.existsSync(preloadPath)) {
+
+            let preloadContent = fs.readFileSync(preloadPath, 'utf8');
+
+            const markerIdx = preloadContent.indexOf('// --- Antigravity Active Account Quota Top-Bar Indicator ---');
+
+            if (markerIdx !== -1) {
+
+                preloadContent = preloadContent.substring(0, markerIdx).trim();
+
+            }
+
+            preloadContent = preloadContent.trim() + '\n\n' + PRELOAD_INJECTION;
+
+            fs.writeFileSync(preloadPath, preloadContent, 'utf8');
+
+        }
+
+
+
+        // 3. Patch ipcHandlers.js (auto-launch daemon on Antigravity startup + control-center:open & ensure-daemon handlers)
+
+        const ipcPath = path.join(tempDir, 'dist', 'ipcHandlers.js');
+
+        if (fs.existsSync(ipcPath)) {
+
+            let ipcContent = fs.readFileSync(ipcPath, 'utf8');
+
+            // Remove any older control-center:open snippet if present
+            ipcContent = ipcContent.replace(/\/\/ --- Antigravity Control Center Auto-Launch & IPC ---[\s\S]*?\/\/ --- End Antigravity Control Center IPC ---\s*/g, '');
+
+            if (!ipcContent.includes('control-center:ensure-daemon')) {
+
+                const target = "electron_1.ipcMain.handle('storage:get-items',";
+
+                const injection = [
+                    "// --- Antigravity Control Center Auto-Launch & IPC ---",
+                    "    const spawnControlCenter = (args = []) => {",
+                    "        try {",
+                    "            const { spawn } = require('child_process');",
+                    "            const exePath = 'C:\\\\Users\\\\3bdyna\\\\AppData\\\\Local\\\\Programs\\\\AntigravityControlCenter\\\\v1.3.0\\\\AntigravityControlCenter\\\\AntigravityControlCenter.exe';",
+                    "            if (require('fs').existsSync(exePath)) {",
+                    "                spawn(exePath, args, {",
+                    "                    cwd: require('path').dirname(exePath),",
+                    "                    detached: true,",
+                    "                    stdio: 'ignore',",
+                    "                    windowsHide: true",
+                    "                }).unref();",
+                    "                return true;",
+                    "            }",
+                    "        } catch (_) {}",
+                    "        return false;",
+                    "    };",
+                    "    const ensureControlCenterDaemon = async () => {",
+                    "        try {",
+                    "            const r = await fetch('http://127.0.0.1:28795/api/ping', { signal: AbortSignal.timeout(800) });",
+                    "            if (r && r.ok) return true;",
+                    "        } catch (_) {}",
+                    "        return spawnControlCenter(['--daemon']);",
+                    "    };",
+                    "    ensureControlCenterDaemon();",
+                    "    electron_1.ipcMain.removeHandler?.('control-center:ensure-daemon');",
+                    "    electron_1.ipcMain.handle('control-center:ensure-daemon', async () => {",
+                    "        return await ensureControlCenterDaemon();",
+                    "    });",
+                    "    electron_1.ipcMain.removeHandler?.('control-center:open');",
+                    "    electron_1.ipcMain.handle('control-center:open', async () => {",
+                    "        try {",
+                    "            const r = await fetch('http://127.0.0.1:28795/api/open-ui', { signal: AbortSignal.timeout(1500) });",
+                    "            if (r && r.ok) return true;",
+                    "        } catch (_) {}",
+                    "        return spawnControlCenter([]);",
+                    "    });",
+                    "    // --- End Antigravity Control Center IPC ---",
+                    "    " + target
+                ].join('\n');
+
+                ipcContent = ipcContent.replace(target, injection);
+
+                fs.writeFileSync(ipcPath, ipcContent, 'utf8');
+
+            }
+
+        }
+
+
+
+        // 4. Repack
+
+        execSync(`npx --yes asar pack "${tempDir}" "${patchedAsar}" --unpack-dir "node_modules/chrome-devtools-mcp"`, { stdio: 'ignore' });
+
+
+
+        // 5. Replace app.asar
+
+        fs.copyFileSync(patchedAsar, ASAR_PATH);
+
+
+
+        // 6. Copy unpacked files if generated
+
+        const patchedUnpacked = patchedAsar + '.unpacked';
+
+        if (fs.existsSync(patchedUnpacked)) {
+
+            try {
+
+                fs.cpSync(patchedUnpacked, UNPACKED_PATH, { recursive: true, force: true });
+
+            } catch (_) {}
+
+        }
+
+
+
+        cleanUpdaterCache();
+
+
+
+        console.log('[AutoPatcher] Successfully patched Antigravity app.asar!');
+
+        return true;
+
+    } catch (err) {
+
+        console.error('[AutoPatcher] Patching failed:', err.message);
+
+        return false;
+
+    } finally {
+
+        try {
+
+            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+
+            if (fs.existsSync(patchedAsar)) fs.rmSync(patchedAsar, { force: true });
+
+            const pUnpacked = patchedAsar + '.unpacked';
+
+            if (fs.existsSync(pUnpacked)) fs.rmSync(pUnpacked, { recursive: true, force: true });
+
+        } catch (_) {}
+
+    }
+
+}
+
+
+
+async function isAntigravityRunning() {
+
+    const portFile = path.join(process.env.APPDATA, 'Antigravity', 'DevToolsActivePort');
+
+    if (!fs.existsSync(portFile)) return false;
+
+    try {
+
+        const port = fs.readFileSync(portFile, 'utf8').trim().split('\n')[0].trim();
+
+        const resp = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(1500) });
+
+        return resp.ok;
+
+    } catch (_) {
+
+        return false;
+
+    }
+
+}
+
+
+
+async function injectLiveCDP() {
+
+    const portFile = path.join(process.env.APPDATA, 'Antigravity', 'DevToolsActivePort');
+
+    if (!fs.existsSync(portFile)) {
+
+        console.log('[AutoPatcher] DevToolsActivePort not found. Antigravity may not be running.');
+
+        return false;
+
+    }
+
+
+
+    const DRAG_PERSISTENT_SCRIPT = `
+
+(function installAntigravityDragStyles() {
+
+    function applyStyles() {
+
+        if (!document.getElementById('ag-window-drag-fix')) {
+
+            const style = document.createElement('style');
+
+            style.id = 'ag-window-drag-fix';
+
+            style.textContent = \`
+
+                /* Titlebar & Top Bar Draggable Regions */
+
+                [class*="@container/titlebar"],
+
+                .shrink-0:has(> [class*="@container/titlebar"]),
+
+                .bg-sidebar > .shrink-0,
+
+                #ag-quota-pill {
+
+                    -webkit-app-region: drag !important;
+
+                }
+
+
+
+                /* Interactive Controls Inside Titlebar Must Be Clickable */
+
+                [class*="@container/titlebar"] button,
+
+                [class*="@container/titlebar"] input,
+
+                [class*="@container/titlebar"] a,
+
+                [class*="@container/titlebar"] [role="button"],
+
+                [class*="@container/titlebar"] [class*="cursor-pointer"],
+
+                .bg-sidebar > .shrink-0 button,
+
+                .bg-sidebar > .shrink-0 [role="button"],
+
+                #ag-btn-control-center,
+
+                [style*="no-drag"] {
+
+                    -webkit-app-region: no-drag !important;
+
+                }
+
+            \`;
+
+            const root = document.head || document.documentElement;
+
+            if (root) root.appendChild(style);
+
+        }
+
+    }
+
+
+
+    if (document.readyState === 'loading') {
+
+        window.addEventListener('DOMContentLoaded', applyStyles);
+
+    } else {
+
+        applyStyles();
+
+    }
+
+    setInterval(applyStyles, 1000);
+
+})();
+
+`;
+
+
+
+    try {
+
+        const port = fs.readFileSync(portFile, 'utf8').trim().split('\n')[0].trim();
+
+        const resp = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(2000) });
+
+        if (!resp.ok) return false;
+
+        const targets = await resp.json();
+
+        const pages = targets.filter(t => {
+            if (t.type !== 'page' || !t.webSocketDebuggerUrl) return false;
+            const u = t.url || '';
+            if (u.startsWith('data:') || u.startsWith('about:')) return false;
+            if (/^https?:\/\/(?!127\.0\.0\.1|localhost)/i.test(u)) return false;
+            return true;
+        });
+
+        if (!pages.length) {
+            console.log('[AutoPatcher] No active Antigravity page targets found.');
+            return false;
+        }
+
+        let injected = 0;
+        for (const page of pages) {
+            await new Promise((resolve) => {
+                const ws = new WebSocket(page.webSocketDebuggerUrl);
+                ws.onopen = () => {
+                    // 1. Invalidate/ensure drag styles immediately
+                    ws.send(JSON.stringify({
+                        id: 1,
+                        method: 'Runtime.evaluate',
+                        params: { expression: DRAG_PERSISTENT_SCRIPT }
+                    }));
+                    // 2. Persist drag styles across ALL future document navigations/reloads
+                    ws.send(JSON.stringify({
+                        id: 2,
+                        method: 'Page.addScriptToEvaluateOnNewDocument',
+                        params: { source: DRAG_PERSISTENT_SCRIPT }
+                    }));
+                    // 3. Ensure Quota Pill
+                    ws.send(JSON.stringify({
+                        id: 3,
+                        method: 'Runtime.evaluate',
+                        params: { expression: 'Boolean(document.getElementById("ag-quota-pill"))' }
+                    }));
+                };
+                ws.onmessage = (msg) => {
+                    try {
+                        const data = JSON.parse(msg.data);
+                        if (data.id === 3) {
+                            ws.send(JSON.stringify({
+                                id: 4,
+                                method: 'Runtime.evaluate',
+                                params: { expression: PRELOAD_INJECTION }
+                            }));
+                        } else if (data.id === 4) {
+
+                            injected++;
+
+                            setImmediate(() => { try { ws.close(); } catch(_) {} resolve(); });
+
+                        }
+
+                    } catch (_) {
+
+                        ws.close();
+
+                        resolve();
+
+                    }
+
+                };
+
+                ws.onerror = () => resolve();
+
+                setTimeout(() => {
+
+                    try { ws.close(); } catch(_) {}
+
+                    resolve();
+
+                }, 2500);
+
+            });
+
+        }
+
+        console.log(`[AutoPatcher] Successfully ensured draggable titlebar & quota pill on ${injected} page(s).`);
+
+        return true;
+
+    } catch (e) {
+
+        console.error('[AutoPatcher] Live CDP injection error:', e.message);
+
+        return false;
+
+    }
+
+}
+
+
+
+async function applyPatch(force = false) {
+    const isLiveOnly = process.argv.includes('--live');
+    const isDiskOnly = process.argv.includes('--disk');
+
+    let liveOk = false;
+    if (!isDiskOnly) {
+        const running = await isAntigravityRunning();
+        if (running) {
+            console.log('[AutoPatcher] Antigravity CDP active. Performing zero-downtime Live CDP injection...');
+            liveOk = await injectLiveCDP();
+            if (liveOk && !force && isAlreadyPatched()) return true;
+        }
+    }
+
+    if (isLiveOnly) {
+        return liveOk;
+    }
+
+    return applyDiskPatch(force);
+}
+
+
+
+// If run directly:
+
+if (require.main === module) {
+    const force = process.argv.includes('--force');
+    applyPatch(force).then(success => {
+        setTimeout(() => {
+            process.exit(success ? 0 : 1);
+        }, 200);
+    }).catch(err => {
+        console.error('[AutoPatcher] Fatal error:', err);
+        setTimeout(() => {
+            process.exit(1);
+        }, 200);
+    });
+}
+
+
+
+module.exports = { isAlreadyPatched, applyPatch, applyDiskPatch, injectLiveCDP, isAntigravityRunning, ASAR_PATH };
+
+
+
+
