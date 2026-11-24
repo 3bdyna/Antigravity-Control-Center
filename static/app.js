@@ -486,11 +486,21 @@ let currentState = null;
       const afCard = document.getElementById('af-card');
       if (!grid || !cmCard || !afCard) return;
 
-      const previewNormal = new URLSearchParams(window.location.search).get('preview') === 'normal';
+      const previewMode = new URLSearchParams(window.location.search).get('preview');
       const cm = optimizerCardState.contextMode;
       const af = optimizerCardState.agyFast;
-      const showContextMode = !previewNormal && Boolean(cm && (cm.installed || cm.active || (cm.total_calls || 0) > 0));
-      const showAgyFast = !previewNormal && Boolean(af && (af.installed || af.active || (af.total_calls || 0) > 0));
+      let showContextMode = Boolean(cm && (cm.installed || cm.active || (cm.total_calls || 0) > 0));
+      let showAgyFast = Boolean(af && (af.installed || af.active || (af.total_calls || 0) > 0));
+      if (previewMode === 'normal' || previewMode === 'none') {
+        showContextMode = false;
+        showAgyFast = false;
+      } else if (previewMode === 'cm') {
+        showContextMode = true;
+        showAgyFast = false;
+      } else if (previewMode === 'af') {
+        showContextMode = false;
+        showAgyFast = true;
+      }
       const visibleCount = (showContextMode ? 1 : 0) + (showAgyFast ? 1 : 0);
 
       cmCard.classList.toggle('opt-hidden', !showContextMode);
