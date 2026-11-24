@@ -633,7 +633,7 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             body = self._get_static_asset("index.html")
             if body is not None:
-                self.send_static("index.html", body, "text/html; charset=utf-8", cache_control="no-cache")
+                self.send_static("index.html", body, "text/html; charset=utf-8", cache_control="no-store, no-cache, must-revalidate")
                 return
 
         if path == "/static/tailwind.css":
@@ -645,13 +645,13 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
         if path == "/static/styles.css":
             body = self._get_static_asset("styles.css")
             if body is not None:
-                self.send_static("styles.css", body, "text/css; charset=utf-8", cache_control="no-cache")
+                self.send_static("styles.css", body, "text/css; charset=utf-8", cache_control="no-store, no-cache, must-revalidate")
                 return
 
         if path == "/static/app.js":
             body = self._get_static_asset("app.js")
             if body is not None:
-                self.send_static("app.js", body, "application/javascript; charset=utf-8", cache_control="no-cache")
+                self.send_static("app.js", body, "application/javascript; charset=utf-8", cache_control="no-store, no-cache, must-revalidate")
                 return
 
         if path == "/static/app_icon.png":

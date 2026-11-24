@@ -186,13 +186,18 @@ try {
             "/SUPPRESSMSGBOXES",
             "/NORESTART",
             "/CLOSEAPPLICATIONS",
-            "/FORCECLOSEAPPLICATIONS",
-            "/RELAUNCH"
+            "/FORCECLOSEAPPLICATIONS"
         )
         Write-Host "[Release] Running installer: $SetupExe" -ForegroundColor Cyan
         $Proc = Start-Process -FilePath $SetupExe -ArgumentList $InstallerArgs -Wait -PassThru
         if ($Proc.ExitCode -ne 0) {
             throw "Local installer exited with code $($Proc.ExitCode)"
+        }
+
+        $InstalledExe = Join-Path $env:LOCALAPPDATA "Programs\AntigravityControlCenter\AntigravityControlCenter.exe"
+        $Launch = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$InstalledExe`"" }
+        if ($Launch.ReturnValue -ne 0) {
+            throw "Failed to relaunch installed app (Win32_Process Create returned $($Launch.ReturnValue))"
         }
         Write-Host "[Release] Local installed app updated and relaunched successfully." -ForegroundColor Green
     }
