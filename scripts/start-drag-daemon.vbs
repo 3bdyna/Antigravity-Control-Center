@@ -1,2 +1,3 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """C:\Program Files\nodejs\node.exe"" ""C:\Users\3bdyna\AppData\Local\Programs\AntigravityControlCenter\antigravity-drag-daemon.js""", 0, False
+DaemonJs = WshShell.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\AntigravityControlCenter\antigravity-drag-daemon.js")
+WshShell.Run """C:\Program Files\nodejs\node.exe"" """ & DaemonJs & """", 0, False

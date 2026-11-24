@@ -1939,6 +1939,262 @@ async function loadAnalytics() {
       }
     }
 
+    // ==========================================
+    // SOFTWARE SELF-UPDATER MODAL & POLLING
+    // ==========================================
+    let updateState = null;
+    let updatePollTimer = null;
+    let autoInstallAfterDownload = false;
+
+    function _stopUpdatePoll() {
+      if (updatePollTimer) {
+        clearInterval(updatePollTimer);
+        updatePollTimer = null;
+      }
+    }
+
+    function _ensureUpdatePoll() {
+      if (!updatePollTimer) {
+        updatePollTimer = setInterval(() => {
+          fetchUpdateStatus();
+        }, 600);
+      }
+    }
+
+    function renderUpdateUI() {
+      if (!updateState) return;
+      const badge = document.getElementById('app-version-badge');
+      if (badge && updateState.current_version) {
+        badge.innerText = `v${updateState.current_version}`;
+      }
+
+      const dot = document.getElementById('update-indicator-dot');
+      const headerBtn = document.getElementById('btn-check-updates');
+      const headerLabel = document.getElementById('btn-check-updates-label');
+      const hasUpdate = (updateState.status === 'available' || updateState.status === 'ready');
+      if (dot) dot.classList.toggle('hidden', !hasUpdate);
+      if (headerBtn) {
+        headerBtn.title = hasUpdate && updateState.latest_version
+          ? `Update available: v${updateState.latest_version}`
+          : 'Check for updates';
+      }
+      if (headerLabel) {
+        headerLabel.innerText = hasUpdate && updateState.latest_version
+          ? `Update v${updateState.latest_version}`
+          : 'Check for Updates';
+      }
+
+      const modal = document.getElementById('update-modal');
+      if (!modal || modal.classList.contains('hidden')) return;
+
+      const curEl = document.getElementById('update-current-ver');
+      const latEl = document.getElementById('update-latest-ver');
+      const statusBadge = document.getElementById('update-status-badge');
+      const devNotice = document.getElementById('update-dev-notice');
+      const msgBox = document.getElementById('update-message-box');
+      const progWrap = document.getElementById('update-progress-wrap');
+      const progPct = document.getElementById('update-progress-pct');
+      const progBar = document.getElementById('update-progress-bar');
+      const notesWrap = document.getElementById('update-notes-wrap');
+      const notesEl = document.getElementById('update-release-notes');
+      const btnRecheck = document.getElementById('btn-update-recheck');
+      const btnCancel = document.getElementById('btn-update-cancel');
+      const btnAction = document.getElementById('btn-update-action');
+
+      if (curEl) curEl.innerText = updateState.current_version ? `v${updateState.current_version}` : 'v--';
+      if (latEl) latEl.innerText = updateState.latest_version ? `v${updateState.latest_version}` : '--';
+      if (devNotice) devNotice.classList.toggle('hidden', Boolean(updateState.is_frozen));
+
+      const st = updateState.status || 'idle';
+      const statusMeta = {
+        idle: { text: 'Idle', cls: 'swiss-badge shrink-0' },
+        checking: { text: 'Checking...', cls: 'swiss-badge shrink-0' },
+        up_to_date: { text: 'Up to Date', cls: 'swiss-badge swiss-badge-sage shrink-0' },
+        available: { text: 'Update Available', cls: 'swiss-badge shrink-0' },
+        downloading: { text: 'Downloading', cls: 'swiss-badge shrink-0' },
+        ready: { text: 'Ready to Install', cls: 'swiss-badge swiss-badge-sage shrink-0' },
+        error: { text: 'Error', cls: 'swiss-badge shrink-0' }
+      }[st] || { text: st, cls: 'swiss-badge shrink-0' };
+
+      if (statusBadge) {
+        statusBadge.className = statusMeta.cls;
+        statusBadge.innerText = statusMeta.text;
+        statusBadge.style.borderColor = st === 'available' || st === 'error' ? 'var(--accent)' : '';
+        statusBadge.style.color = st === 'available' || st === 'error' ? 'var(--accent)' : '';
+      }
+
+      if (msgBox) {
+        let msg = '';
+        let borderStyle = '';
+        if (st === 'checking') {
+          msg = 'Checking GitHub Releases for the latest version...';
+        } else if (st === 'up_to_date') {
+          msg = `You are running the latest version (v${updateState.current_version}).`;
+          borderStyle = 'border-left: 3px solid var(--sage-text);';
+        } else if (st === 'error') {
+          msg = updateState.error || 'Failed to check or download update.';
+          borderStyle = 'border-left: 3px solid var(--accent);';
+        } else if (st === 'ready') {
+          msg = 'Installer downloaded and verified with SHA-256. Click Install & Restart to apply the update.';
+          borderStyle = 'border-left: 3px solid var(--sage-text);';
+        } else if (st === 'available' && !updateState.has_installer) {
+          msg = 'A new release is available on GitHub, but no matching Windows installer asset was attached yet.';
+          borderStyle = 'border-left: 3px solid var(--amber-text);';
+        }
+        msgBox.style.cssText = borderStyle;
+        msgBox.innerText = msg;
+        msgBox.classList.toggle('hidden', !msg);
+      }
+
+      if (progWrap) {
+        const showProg = (st === 'downloading' || st === 'ready');
+        progWrap.classList.toggle('hidden', !showProg);
+        const pct = Math.max(0, Math.min(100, Number(updateState.progress_pct || 0)));
+        if (progPct) progPct.innerText = `${pct}%`;
+        if (progBar) progBar.style.width = `${pct}%`;
+      }
+
+      if (notesWrap && notesEl) {
+        const notes = (updateState.release_notes || '').trim();
+        notesWrap.classList.toggle('hidden', !notes);
+        notesEl.innerText = notes;
+      }
+
+      if (btnRecheck) {
+        btnRecheck.disabled = (st === 'checking' || st === 'downloading');
+        btnRecheck.classList.toggle('hidden', st === 'downloading');
+      }
+      if (btnCancel) {
+        btnCancel.classList.toggle('hidden', st !== 'downloading');
+      }
+      if (btnAction) {
+        const canDownload = (st === 'available' && Boolean(updateState.has_installer));
+        const canInstall = (st === 'ready');
+        const showAction = (canDownload || canInstall);
+        btnAction.classList.toggle('hidden', !showAction);
+        btnAction.disabled = !updateState.is_frozen || st === 'downloading';
+        const lbl = btnAction.querySelector('span');
+        if (lbl) lbl.innerText = canInstall ? 'Install & Restart' : 'Download & Install';
+      }
+    }
+
+    async function fetchUpdateStatus() {
+      try {
+        const res = await fetch('/api/update/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        updateState = await res.json();
+        renderUpdateUI();
+
+        const st = updateState.status;
+        if (st === 'checking' || st === 'downloading') {
+          _ensureUpdatePoll();
+        } else {
+          _stopUpdatePoll();
+        }
+
+        if (st === 'ready' && autoInstallAfterDownload) {
+          autoInstallAfterDownload = false;
+          await installReadyUpdate();
+        } else if (st === 'error' || st === 'available') {
+          if (st === 'error') autoInstallAfterDownload = false;
+        }
+      } catch (e) {}
+    }
+
+    function openUpdateModal() {
+      const modal = document.getElementById('update-modal');
+      if (modal) modal.classList.remove('hidden');
+      renderUpdateUI();
+      if (!updateState || ['idle', 'up_to_date', 'error'].includes(updateState.status)) {
+        triggerUpdateCheck();
+      } else {
+        fetchUpdateStatus();
+      }
+    }
+
+    function closeUpdateModal() {
+      const modal = document.getElementById('update-modal');
+      if (modal) modal.classList.add('hidden');
+      if (!updateState || updateState.status !== 'downloading') {
+        _stopUpdatePoll();
+      }
+    }
+
+    async function triggerUpdateCheck() {
+      try {
+        const res = await fetch('/api/update/check', { method: 'POST' });
+        const d = await res.json();
+        if (d && d.update) {
+          updateState = d.update;
+          renderUpdateUI();
+        }
+        _ensureUpdatePoll();
+      } catch (e) {
+        showToast('Failed to check for updates: ' + e.message, 'error');
+      }
+    }
+
+    async function downloadAndInstallUpdate() {
+      if (!updateState) return;
+      if (!updateState.is_frozen) {
+        showToast('In-app install is disabled in dev mode. Use GitHub Releases instead.', 'info', 4500);
+        return;
+      }
+      if (updateState.status === 'ready') {
+        await installReadyUpdate();
+        return;
+      }
+      autoInstallAfterDownload = true;
+      try {
+        const res = await fetch('/api/update/download', { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.ok) {
+          autoInstallAfterDownload = false;
+          showToast(d.error || 'Failed to start update download', 'error', 5000);
+          await fetchUpdateStatus();
+          return;
+        }
+        _ensureUpdatePoll();
+        await fetchUpdateStatus();
+      } catch (e) {
+        autoInstallAfterDownload = false;
+        showToast('Download error: ' + e.message, 'error', 5000);
+      }
+    }
+
+    async function cancelUpdateDownload() {
+      autoInstallAfterDownload = false;
+      try {
+        await fetch('/api/update/cancel', { method: 'POST' });
+        showToast('Update download cancelled.', 'info', 3000);
+        await fetchUpdateStatus();
+      } catch (e) {}
+    }
+
+    async function installReadyUpdate() {
+      try {
+        const res = await fetch('/api/update/install', { method: 'POST' });
+        const d = await res.json();
+        if (res.ok && d.ok) {
+          showToast('Launching verified installer and restarting Control Center...', 'success', 6000);
+          _stopUpdatePoll();
+        } else {
+          showToast(d.error || 'Failed to launch installer', 'error', 5000);
+        }
+      } catch (e) {
+        showToast('Install error: ' + e.message, 'error', 5000);
+      }
+    }
+
+    function openUpdateReleasePage() {
+      const url = (updateState && updateState.release_url)
+        ? updateState.release_url
+        : 'https://github.com/3bdyna/Antigravity-Control-Center/releases';
+      if (url.startsWith('https://github.com/')) {
+        window.open(url, '_blank');
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       // Instant Local Storage Hydration (0ms load time)
       try {
@@ -1967,6 +2223,7 @@ async function loadAnalytics() {
         switchTab('sessions');
       }
       fetchStatus(false);
+      fetchUpdateStatus();
       // Real-time Server-Sent Events stream (replaces constant 8s polling)
       let _sseFallbackTimer = null;
       function setSseState(connected) {
@@ -1985,6 +2242,9 @@ async function loadAnalytics() {
           es.onopen = () => setSseState(true);
           es.addEventListener('status', () => {
             if (!document.hidden) fetchStatus(false);
+          });
+          es.addEventListener('update', () => {
+            fetchUpdateStatus();
           });
           es.onerror = () => {
             setSseState(false);

@@ -1370,7 +1370,7 @@ def backup_sqlite_db():
     Feature 10: Safely copies tokens_history.db using the SQLite Online Backup API.
     Writes to Downloads or Desktop with a timestamped filename.
     """
-    user_profile = os.environ.get("USERPROFILE", "C:\\Users\\3bdyna")
+    user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
     downloads_dir = os.path.join(user_profile, "Downloads")
     desktop_dir = os.path.join(user_profile, "Desktop")
     target_dir = downloads_dir if os.path.isdir(downloads_dir) else desktop_dir

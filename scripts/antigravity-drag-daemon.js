@@ -549,8 +549,9 @@ async function ensureControlCenterDaemon() {
   try {
     const { spawn } = require('child_process');
     const exeCandidates = [
-      path.join(process.env.LOCALAPPDATA, 'Programs', 'AntigravityControlCenter', 'v1.3.0', 'AntigravityControlCenter', 'AntigravityControlCenter.exe'),
-      path.join(process.env.LOCALAPPDATA, 'Programs', 'AntigravityControlCenter', 'v1.2.2', 'AntigravityControlCenter', 'AntigravityControlCenter.exe')
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'AntigravityControlCenter', 'AntigravityControlCenter.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'AntigravityControlCenter', 'v1.3.0', 'AntigravityControlCenter', 'AntigravityControlCenter.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'AntigravityControlCenter', 'v1.2.2', 'AntigravityControlCenter', 'AntigravityControlCenter.exe')
     ];
     for (const exe of exeCandidates) {
       if (fs.existsSync(exe)) {

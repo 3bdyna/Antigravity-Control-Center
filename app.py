@@ -93,6 +93,8 @@ from token_tracker import (
     is_ai_generating
 )
 from ui_html import load_static_bytes
+from version import APP_VERSION, GITHUB_REPO, is_frozen, updates_dir, cleanup_old_installers
+import updater
 
 PORT = 28795
 AUTOPILOT_RUNNING = False
@@ -109,6 +111,146 @@ _SSE_LOCK = threading.Lock()
 _SSE_CLIENTS = []
 _UI_SSE_CLIENTS = set()
 _SHOW_ACK = threading.Event()
+
+_UPDATE_LOCK = threading.Lock()
+_UPDATE_CANCEL_EVENT = threading.Event()
+_UPDATE_STATE = {
+    "status": "idle",
+    "current_version": APP_VERSION,
+    "latest_version": "",
+    "release_notes": "",
+    "release_url": f"https://github.com/{GITHUB_REPO}/releases",
+    "progress_pct": 0,
+    "is_frozen": is_frozen(),
+    "error": "",
+    "has_installer": False,
+}
+_UPDATE_INTERNAL = {
+    "verified_installer_path": "",
+    "release_info": None,
+}
+
+
+def _get_public_update_status():
+    """Return a thread-safe copy of public update state (never exposes internal paths)."""
+    with _UPDATE_LOCK:
+        state = dict(_UPDATE_STATE)
+        state["current_version"] = APP_VERSION
+        state["is_frozen"] = is_frozen()
+        return state
+
+
+def _start_update_check(silent=False):
+    """Trigger a non-blocking GitHub Releases check in a background daemon thread."""
+    with _UPDATE_LOCK:
+        if _UPDATE_STATE["status"] in ("checking", "downloading"):
+            return False
+        if not silent:
+            _UPDATE_STATE["status"] = "checking"
+            _UPDATE_STATE["error"] = ""
+            _UPDATE_STATE["progress_pct"] = 0
+
+    if not silent:
+        broadcast_event("update")
+
+    def _worker():
+        try:
+            info = updater.check_for_updates(timeout=8.0)
+            with _UPDATE_LOCK:
+                _UPDATE_INTERNAL["release_info"] = info
+                _UPDATE_INTERNAL["verified_installer_path"] = ""
+                _UPDATE_STATE["latest_version"] = info.get("latest_version", "")
+                _UPDATE_STATE["release_notes"] = info.get("release_notes", "")
+                _UPDATE_STATE["release_url"] = info.get("release_url") or f"https://github.com/{GITHUB_REPO}/releases"
+                _UPDATE_STATE["progress_pct"] = 0
+                _UPDATE_STATE["error"] = ""
+                _UPDATE_STATE["has_installer"] = bool(info.get("asset_url") and info.get("checksums_url"))
+                _UPDATE_STATE["status"] = "available" if info.get("update_available") else "up_to_date"
+            broadcast_event("update")
+        except Exception as e:
+            with _UPDATE_LOCK:
+                if silent:
+                    if _UPDATE_STATE["status"] == "checking":
+                        _UPDATE_STATE["status"] = "idle"
+                    _UPDATE_STATE["error"] = ""
+                else:
+                    _UPDATE_STATE["status"] = "error"
+                    _UPDATE_STATE["error"] = str(e)
+            if not silent:
+                log_msg(f"[Updater] Check failed: {e}")
+                broadcast_event("update")
+
+    threading.Thread(target=_worker, daemon=True, name="UpdateChecker").start()
+    return True
+
+
+def _start_update_download():
+    """Download and verify the latest release installer in a background daemon thread."""
+    if not is_frozen():
+        return {
+            "ok": False,
+            "error": "In-app update downloads are only enabled in the installed app (currently running from source in dev mode).",
+        }
+
+    with _UPDATE_LOCK:
+        if _UPDATE_STATE["status"] == "downloading":
+            return {"ok": True, "status": "downloading"}
+        rel = _UPDATE_INTERNAL.get("release_info")
+        if not rel or not rel.get("asset_url") or not rel.get("checksums_url"):
+            return {
+                "ok": False,
+                "error": "No verified Windows installer asset is available for this release. Check for updates or visit GitHub Releases.",
+            }
+        rel_copy = dict(rel)
+        _UPDATE_CANCEL_EVENT.clear()
+        _UPDATE_INTERNAL["verified_installer_path"] = ""
+        _UPDATE_STATE["status"] = "downloading"
+        _UPDATE_STATE["progress_pct"] = 0
+        _UPDATE_STATE["error"] = ""
+
+    broadcast_event("update")
+
+    def _worker():
+        last_broadcast_pct = -1
+
+        def _on_progress(pct):
+            nonlocal last_broadcast_pct
+            with _UPDATE_LOCK:
+                _UPDATE_STATE["progress_pct"] = int(pct)
+            if pct >= 100 or abs(pct - last_broadcast_pct) >= 2:
+                last_broadcast_pct = pct
+                broadcast_event("update")
+
+        try:
+            verified_path = updater.download_and_verify_update(
+                rel_copy,
+                progress_cb=_on_progress,
+                cancel_event=_UPDATE_CANCEL_EVENT,
+            )
+            with _UPDATE_LOCK:
+                _UPDATE_INTERNAL["verified_installer_path"] = str(verified_path)
+                _UPDATE_STATE["status"] = "ready"
+                _UPDATE_STATE["progress_pct"] = 100
+                _UPDATE_STATE["error"] = ""
+            log_msg(f"[Updater] Verified installer ready: {verified_path.name}")
+        except updater.UpdateCancelledError:
+            with _UPDATE_LOCK:
+                _UPDATE_INTERNAL["verified_installer_path"] = ""
+                _UPDATE_STATE["status"] = "available"
+                _UPDATE_STATE["progress_pct"] = 0
+                _UPDATE_STATE["error"] = ""
+            log_msg("[Updater] Download cancelled by user")
+        except Exception as e:
+            with _UPDATE_LOCK:
+                _UPDATE_INTERNAL["verified_installer_path"] = ""
+                _UPDATE_STATE["status"] = "error"
+                _UPDATE_STATE["progress_pct"] = 0
+                _UPDATE_STATE["error"] = str(e)
+            log_msg(f"[Updater] Download/verification failed: {e}")
+        broadcast_event("update")
+
+    threading.Thread(target=_worker, daemon=True, name="UpdateDownloader").start()
+    return {"ok": True, "status": "downloading"}
 
 
 def broadcast_event(event_name="status"):
@@ -663,6 +805,10 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json(turns)
             return
 
+        if path == "/api/update/status":
+            self.send_json(_get_public_update_status())
+            return
+
         if path == "/api/backup/db":
             res = backup_sqlite_db()
             self.send_json(res)
@@ -883,10 +1029,73 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json(res)
             return
 
+        if path == "/api/update/check":
+            _start_update_check(silent=False)
+            self.send_json({"ok": True, "update": _get_public_update_status()})
+            return
+
+        if path == "/api/update/download":
+            res = _start_update_download()
+            self.send_json(res, status_code=200 if res.get("ok") else 400)
+            return
+
+        if path == "/api/update/cancel":
+            _UPDATE_CANCEL_EVENT.set()
+            self.send_json({"ok": True})
+            return
+
+        if path == "/api/update/install":
+            if not is_frozen():
+                self.send_json(
+                    {"ok": False, "error": "In-app installation is disabled when running from source (dev mode)."},
+                    status_code=400,
+                )
+                return
+            with _UPDATE_LOCK:
+                verified_path_str = _UPDATE_INTERNAL.get("verified_installer_path") or ""
+            try:
+                from pathlib import Path
+                verified_path = Path(verified_path_str).resolve() if verified_path_str else None
+                upd_dir = updates_dir().resolve()
+                if not verified_path or verified_path.parent != upd_dir or not verified_path.is_file():
+                    self.send_json(
+                        {"ok": False, "error": "No verified update installer is ready to install."},
+                        status_code=400,
+                    )
+                    return
+            except Exception as e:
+                self.send_json({"ok": False, "error": str(e)}, status_code=400)
+                return
+
+            self.send_json({"ok": True})
+
+            def _install_and_exit():
+                time.sleep(0.15)
+                close_ui_window_if_open()
+                release_daemon_mutex()
+                try:
+                    updater.launch_installer(verified_path)
+                except Exception as e:
+                    log_msg(f"[Updater] Failed to launch installer: {e}")
+                    return
+                if QUIT_DAEMON_CB:
+                    try:
+                        QUIT_DAEMON_CB()
+                        time.sleep(0.6)
+                    except Exception:
+                        pass
+                else:
+                    time.sleep(0.2)
+                os._exit(0)
+
+            threading.Thread(target=_install_and_exit, daemon=True, name="UpdateInstallerLauncher").start()
+            return
+
         if path == "/api/daemon/quit":
             self.send_json({"ok": True})
             def _graceful_quit():
                 close_ui_window_if_open()
+                release_daemon_mutex()
                 if QUIT_DAEMON_CB:
                     try:
                         QUIT_DAEMON_CB()
@@ -1004,6 +1213,17 @@ _UI_PROC = None
 _UI_LAST_LAUNCH = 0.0
 
 
+def _get_kernel32():
+    """Return a kernel32 handle with 64-bit safe HANDLE argtypes/restypes."""
+    import ctypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_bool
+    return kernel32
+
+
 def acquire_daemon_mutex():
     """Atomically acquires the daemon mutex. Returns False if another daemon already holds it."""
     global _DAEMON_MUTEX_HANDLE
@@ -1012,17 +1232,31 @@ def acquire_daemon_mutex():
     if os.name == "nt":
         try:
             import ctypes
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32 = _get_kernel32()
             handle = kernel32.CreateMutexW(None, False, DAEMON_MUTEX_NAME)
             err = ctypes.get_last_error()
             if not handle or err == 183:  # ERROR_ALREADY_EXISTS
                 if handle:
-                    kernel32.CloseHandle(handle)
+                    kernel32.CloseHandle(ctypes.c_void_p(handle))
                 return False
             _DAEMON_MUTEX_HANDLE = handle
         except Exception:
             pass
     return True
+
+
+def release_daemon_mutex():
+    """Safely closes the daemon mutex handle if owned by this process."""
+    global _DAEMON_MUTEX_HANDLE
+    handle = _DAEMON_MUTEX_HANDLE
+    _DAEMON_MUTEX_HANDLE = None
+    if handle and os.name == "nt":
+        try:
+            import ctypes
+            kernel32 = _get_kernel32()
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+        except Exception:
+            pass
 
 
 def acquire_ui_mutex():
@@ -1033,17 +1267,31 @@ def acquire_ui_mutex():
     if os.name == "nt":
         try:
             import ctypes
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32 = _get_kernel32()
             handle = kernel32.CreateMutexW(None, False, UI_MUTEX_NAME)
             err = ctypes.get_last_error()
             if not handle or err == 183:  # ERROR_ALREADY_EXISTS
                 if handle:
-                    kernel32.CloseHandle(handle)
+                    kernel32.CloseHandle(ctypes.c_void_p(handle))
                 return False
             _UI_MUTEX_HANDLE = handle
         except Exception:
             pass
     return True
+
+
+def release_ui_mutex():
+    """Safely closes the UI mutex handle if owned by this process."""
+    global _UI_MUTEX_HANDLE
+    handle = _UI_MUTEX_HANDLE
+    _UI_MUTEX_HANDLE = None
+    if handle and os.name == "nt":
+        try:
+            import ctypes
+            kernel32 = _get_kernel32()
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+        except Exception:
+            pass
 
 
 def _trim_working_set():
@@ -1301,6 +1549,17 @@ def _run_daemon_inner():
         except Exception:
             pass
 
+        try:
+            cleanup_old_installers()
+        except Exception:
+            pass
+
+        if is_frozen():
+            try:
+                _start_update_check(silent=True)
+            except Exception:
+                pass
+
         time.sleep(1.5)
         _trim_working_set()
 
@@ -1344,6 +1603,7 @@ def _run_daemon_inner():
         _quitting = True
         _hide_tray_icon()
         close_ui_window_if_open()
+        release_daemon_mutex()
         app.quit()
         threading.Thread(target=lambda: (time.sleep(0.35), os._exit(0)), daemon=True).start()
 
@@ -1691,6 +1951,7 @@ def _run_ui_inner():
                 self.browser.deleteLater()
             except Exception:
                 pass
+            release_ui_mutex()
             event.accept()
             QApplication.instance().quit()
             threading.Thread(target=lambda: (time.sleep(0.15), os._exit(0)), daemon=True).start()

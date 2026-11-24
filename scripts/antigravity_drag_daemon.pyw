@@ -4,7 +4,12 @@ import sys
 import time
 
 NODE_EXE = r"C:\Program Files\nodejs\node.exe"
-DAEMON_JS = r"C:\Users\3bdyna\AppData\Local\Programs\AntigravityControlCenter\antigravity-drag-daemon.js"
+DAEMON_JS = os.path.join(
+    os.environ.get("LOCALAPPDATA", ""),
+    "Programs",
+    "AntigravityControlCenter",
+    "antigravity-drag-daemon.js",
+)
 
 CREATE_NO_WINDOW = 0x08000000
 

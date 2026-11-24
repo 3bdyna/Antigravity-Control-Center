@@ -18,7 +18,12 @@
       <div class="flex items-center gap-2">
         <img src="/static/app_icon.png" alt="" class="w-5 h-5 shrink-0 object-contain" aria-hidden="true">
         <span class="swiss-brand-title">Control Center</span>
-        <span class="swiss-badge shrink-0">v1.4.0</span>
+        <span id="app-version-badge" class="swiss-badge shrink-0">v--</span>
+        <button type="button" onclick="openUpdateModal()" id="btn-check-updates" title="Check for updates" class="swiss-btn h-6 px-2 text-[11px] shrink-0">
+          <span id="update-indicator-dot" class="hidden w-1.5 h-1.5 shrink-0" style="background-color: var(--accent); border-radius: 1px;" aria-hidden="true"></span>
+          <svg class="w-3 h-3 swiss-text-secondary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span id="btn-check-updates-label" class="hidden md:inline">Check for Updates</span>
+        </button>
       </div>
 
       <div id="active-account-badge" class="hidden xl:flex items-center gap-1.5 px-2 py-0.5 swiss-well text-xs font-mono swiss-text-secondary shrink-0">
@@ -816,6 +821,82 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=7"></script>
+  <!-- Software Update Modal -->
+  <div id="update-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="swiss-card max-w-lg w-full p-6 space-y-4" style="border-color: var(--border-strong);">
+      <div class="flex items-center justify-between border-b border-hairline pb-3">
+        <h3 class="font-semibold swiss-text-primary text-sm flex items-center gap-2">
+          <svg class="w-4 h-4 swiss-text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Software Update</span>
+        </h3>
+        <button type="button" onclick="closeUpdateModal()" aria-label="Close update modal" class="win-btn p-1">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <!-- Version Comparison -->
+        <div class="p-3.5 swiss-well flex items-center justify-between gap-3">
+          <div class="flex items-center gap-4">
+            <div>
+              <div class="swiss-micro-label">Current</div>
+              <div id="update-current-ver" class="font-mono text-sm font-semibold swiss-text-primary mt-0.5">v--</div>
+            </div>
+            <div class="h-6 w-px bg-hairline"></div>
+            <div>
+              <div class="swiss-micro-label">Latest</div>
+              <div id="update-latest-ver" class="font-mono text-sm font-semibold swiss-text-primary mt-0.5">--</div>
+            </div>
+          </div>
+          <span id="update-status-badge" class="swiss-badge shrink-0">Idle</span>
+        </div>
+
+        <!-- Dev-mode notice when running from source -->
+        <div id="update-dev-notice" class="hidden p-3 swiss-well text-[11px] leading-relaxed" style="border-left: 3px solid var(--amber-text);">
+          <div class="font-semibold swiss-text-primary">Running from Source (Dev Mode)</div>
+          <div class="swiss-text-secondary mt-0.5">In-app silent installation is only enabled in the installed desktop app. You can still check releases or download manually from GitHub.</div>
+        </div>
+
+        <!-- Status / Error Message -->
+        <div id="update-message-box" class="hidden p-3 swiss-well text-[11px] leading-relaxed swiss-text-secondary"></div>
+
+        <!-- Download Progress Bar -->
+        <div id="update-progress-wrap" class="hidden p-3 swiss-well space-y-1.5">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="swiss-text-secondary">Downloading &amp; verifying SHA-256...</span>
+            <span id="update-progress-pct" class="font-mono font-semibold swiss-text-primary">0%</span>
+          </div>
+          <div class="w-full h-1.5 overflow-hidden" style="background: var(--bg-control); border-radius: 1px;">
+            <div id="update-progress-bar" class="h-full" style="width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Release Notes -->
+        <div id="update-notes-wrap" class="hidden space-y-1.5">
+          <div class="swiss-micro-label">Release Notes</div>
+          <pre id="update-release-notes" class="swiss-well p-3 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed swiss-text-secondary m-0"></pre>
+        </div>
+      </div>
+
+      <div class="pt-2 border-t border-hairline flex items-center justify-between gap-2 flex-wrap">
+        <button type="button" onclick="openUpdateReleasePage()" id="btn-update-github" class="swiss-btn px-3 py-1.5 text-xs">
+          <span>Open GitHub Releases</span>
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="triggerUpdateCheck()" id="btn-update-recheck" class="swiss-btn px-3 py-1.5 text-xs">
+            <span>Check Again</span>
+          </button>
+          <button type="button" onclick="cancelUpdateDownload()" id="btn-update-cancel" class="hidden swiss-btn px-3 py-1.5 text-xs">
+            <span>Cancel</span>
+          </button>
+          <button type="button" onclick="downloadAndInstallUpdate()" id="btn-update-action" class="hidden swiss-btn-accent px-3.5 py-1.5 text-xs font-semibold">
+            <span>Download &amp; Install</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

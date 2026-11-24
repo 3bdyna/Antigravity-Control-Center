@@ -840,7 +840,7 @@ function applyDiskPatch(force = false) {
                         "    const spawnControlCenter = (args = []) => {",
                         "        try {",
                         "            const { spawn } = require('child_process');",
-                        "            const exePath = 'C:\\\\Users\\\\3bdyna\\\\AppData\\\\Local\\\\Programs\\\\AntigravityControlCenter\\\\v1.3.0\\\\AntigravityControlCenter\\\\AntigravityControlCenter.exe';",
+                        "            const exePath = require('path').join(process.env.LOCALAPPDATA || '', 'Programs', 'AntigravityControlCenter', 'AntigravityControlCenter.exe');",
                         "            if (require('fs').existsSync(exePath)) {",
                         "                spawn(exePath, args, {",
                         "                    cwd: require('path').dirname(exePath),",
