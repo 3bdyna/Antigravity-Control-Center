@@ -196,7 +196,12 @@ def _start_update_download():
         if _UPDATE_STATE["status"] == "downloading":
             return {"ok": True, "status": "downloading"}
         rel = _UPDATE_INTERNAL.get("release_info")
-        if not rel or not rel.get("asset_url") or not rel.get("checksums_url"):
+        if not rel or not rel.get("update_available"):
+            return {
+                "ok": False,
+                "error": "You are already running the latest version.",
+            }
+        if not rel.get("asset_url") or not rel.get("checksums_url"):
             return {
                 "ok": False,
                 "error": "No verified Windows installer asset is available for this release. Check for updates or visit GitHub Releases.",

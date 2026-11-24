@@ -2107,18 +2107,23 @@ async function loadAnalytics() {
       }
 
       if (btnRecheck) {
+        const hideRecheck = (st === 'downloading');
         btnRecheck.disabled = (st === 'checking' || st === 'downloading');
-        btnRecheck.classList.toggle('hidden', st === 'downloading');
+        btnRecheck.classList.toggle('hidden', hideRecheck);
+        btnRecheck.classList.toggle('opt-hidden', hideRecheck);
       }
       if (btnCancel) {
-        btnCancel.classList.toggle('hidden', st !== 'downloading');
+        const hideCancel = (st !== 'downloading');
+        btnCancel.classList.toggle('hidden', hideCancel);
+        btnCancel.classList.toggle('opt-hidden', hideCancel);
       }
       if (btnAction) {
         const canDownload = (st === 'available' && Boolean(updateState.has_installer));
         const canInstall = (st === 'ready');
         const showAction = (canDownload || canInstall);
         btnAction.classList.toggle('hidden', !showAction);
-        btnAction.disabled = !updateState.is_frozen || st === 'downloading';
+        btnAction.classList.toggle('opt-hidden', !showAction);
+        btnAction.disabled = !updateState.is_frozen || !showAction || st === 'downloading';
         const lbl = btnAction.querySelector('span');
         if (lbl) lbl.innerText = canInstall ? 'Install & Restart' : 'Download & Install';
       }
@@ -2190,6 +2195,7 @@ async function loadAnalytics() {
         await installReadyUpdate();
         return;
       }
+      if (updateState.status !== 'available' || !updateState.has_installer) return;
       autoInstallAfterDownload = true;
       try {
         const res = await fetch('/api/update/download', { method: 'POST' });

@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 GITHUB_REPO = "3bdyna/Antigravity-Control-Center"
 
 
