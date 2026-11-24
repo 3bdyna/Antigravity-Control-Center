@@ -14,7 +14,7 @@ Windows desktop Control Center (PyQt5 + PyQtWebEngine + local HTTP/SSE server on
 - `static/` — Frontend UI assets (`index.html`, `app.js`, `styles.css`, `tailwind.css`).
 - `installer/AntigravityControlCenter.iss` — Inno Setup 6 per-user installer script (`PrivilegesRequired=lowest`, fixed `AppId`, canonical install dir, mutex wait loop).
 - `scripts/` — Companion runtime & release scripts:
-  - `build_release.ps1` — 1-click local release build & optional GitHub Releases publisher (`-Publish`, `-SkipTests`, `-SkipBuild`).
+  - `build_release.ps1` — 1-click local release build, in-place local installer (`-InstallLocal`, `-SkipLocalInstall`), & optional GitHub Releases publisher (`-Publish`, `-SkipTests`, `-SkipBuild`).
   - `auto_patch_antigravity.js` — Patches Antigravity `app.asar` to inject the quota top-bar indicator (invoked by `AntigravityAsarWatchdog` in `app.py`).
   - `antigravity-drag-daemon.js` — CDP (`DevToolsActivePort`) daemon keeping draggable titlebars and the quota indicator active.
   - `antigravity_drag_daemon.pyw`, `run_daemon.vbs`, `start-drag-daemon.vbs` — Silent Windows launchers for the drag daemon.
@@ -54,6 +54,7 @@ Windows desktop Control Center (PyQt5 + PyQtWebEngine + local HTTP/SSE server on
    - **Explicit Release Gate:** NEVER bump `version.APP_VERSION`, create git tags, or run `.\scripts\build_release.ps1 -Publish` unless explicitly requested by the user.
    - **Fixed Inno Setup `AppId`:** Never change `AppId={{6E3A9B14-7C2D-4F8A-9B51-2D8E4C7A1F03}}` in `installer/AntigravityControlCenter.iss`, and never delete or modify `%USERPROFILE%\.gemini\antigravity-switcher` during install/uninstall.
    - **Mutex & Security Parity:** Keep `DAEMON_MUTEX_NAME` / `UI_MUTEX_NAME` in `app.py` identical to `installer/AntigravityControlCenter.iss`, keep TLS verification enabled, enforce HTTPS + `TRUSTED_DOWNLOAD_HOSTS` on every redirect hop, verify SHA-256 via `hmac.compare_digest` before renaming `.part` -> `.exe`, and never accept installer paths from client HTTP requests.
+   - **Auto-Apply Local App Updates:** After any app code/UI edit (skip for docs-only edits like `README.md`/`AGENTS.md`/`LICENSE`), once unit tests pass and changes are committed/pushed, automatically run `.\scripts\build_release.ps1 -SkipTests -InstallLocal` so the user's installed app closes, updates in-place, and relaunches automatically.
    - **2-Word Publish Workflow (`publish update`):**
      - **Normal edits:** Run tests (`$env:PYTHONPATH=".;tests"; python -m unittest test_release -v`), commit, and push to `origin/main` automatically. Never bump `version.py`, create tags, or run `-Publish`.
      - **When the user says `"publish update"`:** Check whether tag `v<APP_VERSION>` already exists on GitHub; if it does, auto-bump the patch version in `version.py` (e.g. `1.4.0` -> `1.4.1`, or minor/major if requested), run tests, commit & push to `origin/main`, and run `.\scripts\build_release.ps1 -Publish`.

@@ -2,7 +2,9 @@
 param(
     [switch]$Publish,
     [switch]$SkipTests,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$InstallLocal,
+    [switch]$SkipLocalInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -159,6 +161,40 @@ try {
             throw "gh release create failed with exit code $LASTEXITCODE"
         }
         Write-Host "[Release] Published $Tag successfully!" -ForegroundColor Green
+    }
+
+    # 8. Install locally in-place and relaunch when -InstallLocal or -Publish (unless -SkipLocalInstall)
+    if ($InstallLocal -or ($Publish -and -not $SkipLocalInstall)) {
+        Write-Host "[Release] Updating local installed Antigravity Control Center..." -ForegroundColor Cyan
+        try {
+            Invoke-RestMethod -Uri "http://127.0.0.1:28795/api/daemon/quit" -Method Post -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+            Start-Sleep -Seconds 2
+        }
+        catch {
+            # Ignore if daemon is not running
+        }
+
+        $RunningProcs = Get-Process -Name "AntigravityControlCenter" -ErrorAction SilentlyContinue
+        if ($RunningProcs) {
+            Write-Host "[Release] Stopping remaining AntigravityControlCenter.exe processes..." -ForegroundColor Yellow
+            $RunningProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+            $RunningProcs | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+        }
+
+        $InstallerArgs = @(
+            "/SILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPPLICATIONS",
+            "/FORCECLOSEAPPLICATIONS",
+            "/RELAUNCH"
+        )
+        Write-Host "[Release] Running installer: $SetupExe" -ForegroundColor Cyan
+        $Proc = Start-Process -FilePath $SetupExe -ArgumentList $InstallerArgs -Wait -PassThru
+        if ($Proc.ExitCode -ne 0) {
+            throw "Local installer exited with code $($Proc.ExitCode)"
+        }
+        Write-Host "[Release] Local installed app updated and relaunched successfully." -ForegroundColor Green
     }
 }
 finally {
