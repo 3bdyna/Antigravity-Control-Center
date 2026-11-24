@@ -9,7 +9,7 @@
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 > [!NOTE]
-> **Honest "Vibe-Coded" Disclaimer:** I'm not a professional programmer—this project was mostly vibe-coded with AI because I wanted a cleaner, faster dashboard for my own Antigravity accounts, quotas, and token usage. Expect the occasional quirk! Bug reports, feedback, and PRs are always welcome.
+> **Honest "Vibe-Coded" Disclaimer:** I'm not a professional programmer. This project was mostly vibe-coded with AI because I wanted a cleaner, faster dashboard for my own Antigravity accounts, quotas, and token usage. Expect the occasional quirk!
 
 ---
 
@@ -64,7 +64,7 @@ Output binary: `dist\AntigravityControlCenter\AntigravityControlCenter.exe`.
 
 ## Recommended Companion Tools (Optional)
 
-If you want to cut down token burn and speed up Antigravity coding sessions, I strongly recommend pairing Control Center with these two open-source tools:
+If you want to cut down token burn and speed up Antigravity coding sessions, I strongly recommend pairing Control Center with these two open-source MCP tools:
 
 - **[`context-mode`](https://github.com/mksglu/context-mode)** *(Elastic License 2.0)* — Sandboxes heavy command outputs and compacts context-window usage so long sessions stay lean and burn fewer tokens.
 - **[`agy-fast`](https://github.com/INK-Q/agy-fast)** *(MIT License)* — Batches codebase search, file outlines, multi-file edits, and concurrent checks to cut round-trips and speed up Antigravity workflows.
