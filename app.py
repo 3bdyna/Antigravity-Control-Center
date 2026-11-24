@@ -179,7 +179,7 @@ class AntigravityAsarWatchdog(threading.Thread):
       with ZERO file touching, zero restarts, and zero agent crashes.
     - If Antigravity is CLOSED: safely repacks app.asar on disk so future launches have it.
     """
-    def __init__(self, check_interval_sec=8.0):
+    def __init__(self, check_interval_sec=3.0):
         super().__init__(daemon=True, name="AntigravityAsarWatchdog")
         self.check_interval_sec = check_interval_sec
         self.asar_path = os.path.expandvars(r"%LOCALAPPDATA%\Programs\antigravity\resources\app.asar")
@@ -187,6 +187,20 @@ class AntigravityAsarWatchdog(threading.Thread):
         self.running = True
         self.last_asar_mtime = None
         self.last_live_patch_attempt = 0.0
+
+    def _notify_restart_needed(self):
+        try:
+            if TRAY_ICON is not None:
+                from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
+                QMetaObject.invokeMethod(
+                    TRAY_ICON,
+                    "showMessage",
+                    Qt.QueuedConnection,
+                    Q_ARG(str, "Antigravity Updated"),
+                    Q_ARG(str, "Top-bar usage indicator was re-patched. Restart Antigravity once to show it."),
+                )
+        except Exception:
+            pass
 
     def run(self):
         time.sleep(3.0)
@@ -208,12 +222,15 @@ class AntigravityAsarWatchdog(threading.Thread):
                 creationflags = 0x08000000 if os.name == 'nt' else 0
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
                 if res.returncode == 0:
-                    log_msg(f"[AsarWatchdog] Initial asar check: {res.stdout.strip()}")
+                    out = res.stdout.strip()
+                    log_msg(f"[AsarWatchdog] Initial asar check: {out}")
+                    if os.path.exists(self.asar_path):
+                        self.last_asar_mtime = os.path.getmtime(self.asar_path)
                 return
             if mtime != self.last_asar_mtime:
                 self.last_asar_mtime = mtime
                 now = time.time()
-                if now - self.last_live_patch_attempt < 30.0:
+                if now - self.last_live_patch_attempt < 15.0:
                     return
                 self.last_live_patch_attempt = now
 
@@ -222,7 +239,12 @@ class AntigravityAsarWatchdog(threading.Thread):
                 creationflags = 0x08000000 if os.name == 'nt' else 0
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
                 if res.returncode == 0:
-                    log_msg(f"[AsarWatchdog] Quota extension applied cleanly: {res.stdout.strip()}")
+                    out = res.stdout.strip()
+                    log_msg(f"[AsarWatchdog] Quota extension applied cleanly: {out}")
+                    if os.path.exists(self.asar_path):
+                        self.last_asar_mtime = os.path.getmtime(self.asar_path)
+                    if "Successfully patched Antigravity app.asar!" in out and "Successfully ensured draggable titlebar" not in out:
+                        self._notify_restart_needed()
                 else:
                     log_msg(f"[AsarWatchdog] Patch script error ({res.returncode}): {res.stderr}")
         except Exception as e:
@@ -1204,7 +1226,7 @@ def _run_daemon_inner():
         token_watcher = BackgroundTokenWatcher(interval_sec=3.0, on_new_events=broadcast_status_event)
         token_watcher.start()
 
-        asar_watchdog = AntigravityAsarWatchdog(check_interval_sec=8.0)
+        asar_watchdog = AntigravityAsarWatchdog(check_interval_sec=3.0)
         asar_watchdog.start()
 
         global AUTOPILOT_RUNNING

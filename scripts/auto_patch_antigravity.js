@@ -795,23 +795,23 @@ function applyDiskPatch(force = false) {
 
         const preloadPath = path.join(tempDir, 'dist', 'preload.js');
 
-        if (fs.existsSync(preloadPath)) {
+        if (!fs.existsSync(preloadPath)) {
+            throw new Error('dist/preload.js not found inside app.asar');
+        }
 
-            let preloadContent = fs.readFileSync(preloadPath, 'utf8');
+        let preloadContent = fs.readFileSync(preloadPath, 'utf8');
 
-            const markerIdx = preloadContent.indexOf('// --- Antigravity Active Account Quota Top-Bar Indicator ---');
+        const markerIdx = preloadContent.indexOf('// --- Antigravity Active Account Quota Top-Bar Indicator ---');
 
-            if (markerIdx !== -1) {
+        if (markerIdx !== -1) {
 
-                preloadContent = preloadContent.substring(0, markerIdx).trim();
-
-            }
-
-            preloadContent = preloadContent.trim() + '\n\n' + PRELOAD_INJECTION;
-
-            fs.writeFileSync(preloadPath, preloadContent, 'utf8');
+            preloadContent = preloadContent.substring(0, markerIdx).trim();
 
         }
+
+        preloadContent = preloadContent.trim() + '\n\n' + PRELOAD_INJECTION;
+
+        fs.writeFileSync(preloadPath, preloadContent, 'utf8');
 
 
 
@@ -828,53 +828,61 @@ function applyDiskPatch(force = false) {
 
             if (!ipcContent.includes('control-center:ensure-daemon')) {
 
-                const target = "electron_1.ipcMain.handle('storage:get-items',";
+                const primaryTarget = "electron_1.ipcMain.handle('storage:get-items',";
+                const fallbackTarget = "electron_1.ipcMain.handle(";
+                const target = ipcContent.includes(primaryTarget)
+                    ? primaryTarget
+                    : (ipcContent.includes(fallbackTarget) ? fallbackTarget : null);
 
-                const injection = [
-                    "// --- Antigravity Control Center Auto-Launch & IPC ---",
-                    "    const spawnControlCenter = (args = []) => {",
-                    "        try {",
-                    "            const { spawn } = require('child_process');",
-                    "            const exePath = 'C:\\\\Users\\\\3bdyna\\\\AppData\\\\Local\\\\Programs\\\\AntigravityControlCenter\\\\v1.3.0\\\\AntigravityControlCenter\\\\AntigravityControlCenter.exe';",
-                    "            if (require('fs').existsSync(exePath)) {",
-                    "                spawn(exePath, args, {",
-                    "                    cwd: require('path').dirname(exePath),",
-                    "                    detached: true,",
-                    "                    stdio: 'ignore',",
-                    "                    windowsHide: true",
-                    "                }).unref();",
-                    "                return true;",
-                    "            }",
-                    "        } catch (_) {}",
-                    "        return false;",
-                    "    };",
-                    "    const ensureControlCenterDaemon = async () => {",
-                    "        try {",
-                    "            const r = await fetch('http://127.0.0.1:28795/api/ping', { signal: AbortSignal.timeout(800) });",
-                    "            if (r && r.ok) return true;",
-                    "        } catch (_) {}",
-                    "        return spawnControlCenter(['--daemon']);",
-                    "    };",
-                    "    ensureControlCenterDaemon();",
-                    "    electron_1.ipcMain.removeHandler?.('control-center:ensure-daemon');",
-                    "    electron_1.ipcMain.handle('control-center:ensure-daemon', async () => {",
-                    "        return await ensureControlCenterDaemon();",
-                    "    });",
-                    "    electron_1.ipcMain.removeHandler?.('control-center:open');",
-                    "    electron_1.ipcMain.handle('control-center:open', async () => {",
-                    "        try {",
-                    "            const r = await fetch('http://127.0.0.1:28795/api/open-ui', { signal: AbortSignal.timeout(1500) });",
-                    "            if (r && r.ok) return true;",
-                    "        } catch (_) {}",
-                    "        return spawnControlCenter([]);",
-                    "    });",
-                    "    // --- End Antigravity Control Center IPC ---",
-                    "    " + target
-                ].join('\n');
+                if (target) {
+                    const injection = [
+                        "// --- Antigravity Control Center Auto-Launch & IPC ---",
+                        "    const spawnControlCenter = (args = []) => {",
+                        "        try {",
+                        "            const { spawn } = require('child_process');",
+                        "            const exePath = 'C:\\\\Users\\\\3bdyna\\\\AppData\\\\Local\\\\Programs\\\\AntigravityControlCenter\\\\v1.3.0\\\\AntigravityControlCenter\\\\AntigravityControlCenter.exe';",
+                        "            if (require('fs').existsSync(exePath)) {",
+                        "                spawn(exePath, args, {",
+                        "                    cwd: require('path').dirname(exePath),",
+                        "                    detached: true,",
+                        "                    stdio: 'ignore',",
+                        "                    windowsHide: true",
+                        "                }).unref();",
+                        "                return true;",
+                        "            }",
+                        "        } catch (_) {}",
+                        "        return false;",
+                        "    };",
+                        "    const ensureControlCenterDaemon = async () => {",
+                        "        try {",
+                        "            const r = await fetch('http://127.0.0.1:28795/api/ping', { signal: AbortSignal.timeout(800) });",
+                        "            if (r && r.ok) return true;",
+                        "        } catch (_) {}",
+                        "        return spawnControlCenter(['--daemon']);",
+                        "    };",
+                        "    ensureControlCenterDaemon();",
+                        "    electron_1.ipcMain.removeHandler?.('control-center:ensure-daemon');",
+                        "    electron_1.ipcMain.handle('control-center:ensure-daemon', async () => {",
+                        "        return await ensureControlCenterDaemon();",
+                        "    });",
+                        "    electron_1.ipcMain.removeHandler?.('control-center:open');",
+                        "    electron_1.ipcMain.handle('control-center:open', async () => {",
+                        "        try {",
+                        "            const r = await fetch('http://127.0.0.1:28795/api/open-ui', { signal: AbortSignal.timeout(1500) });",
+                        "            if (r && r.ok) return true;",
+                        "        } catch (_) {}",
+                        "        return spawnControlCenter([]);",
+                        "    });",
+                        "    // --- End Antigravity Control Center IPC ---",
+                        "    " + target
+                    ].join('\n');
 
-                ipcContent = ipcContent.replace(target, injection);
+                    ipcContent = ipcContent.replace(target, injection);
 
-                fs.writeFileSync(ipcPath, ipcContent, 'utf8');
+                    fs.writeFileSync(ipcPath, ipcContent, 'utf8');
+                } else {
+                    console.warn('[AutoPatcher] Warning: ipcMain.handle anchor not found in dist/ipcHandlers.js');
+                }
 
             }
 
