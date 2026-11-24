@@ -463,21 +463,22 @@ let currentState = null;
     }
 
     // Main Analytics Tab Loader
-        async function loadContextModeData() {
+    function setOptimizerStatusBadge(el, isActive, activeLabel = 'Active', idleLabel = 'Idle') {
+      if (!el) return;
+      if (isActive) {
+        el.innerHTML = `<span class="status-dot w-1.5 h-1.5 shrink-0" style="background-color: var(--sage-text); border-radius: 1px;" aria-hidden="true"></span><span>${activeLabel}</span>`;
+        el.className = 'swiss-badge flex items-center gap-1 swiss-text-primary';
+      } else {
+        el.innerHTML = idleLabel;
+        el.className = 'swiss-badge flex items-center gap-1 swiss-text-muted';
+      }
+    }
+
+    async function loadContextModeData() {
       try {
         const res = await fetch('/api/context-mode/stats');
         const d = await res.json();
-        const active = d.active || false;
-        const statusBadge = document.getElementById('cm-status-badge');
-        if (statusBadge) {
-          if (active) {
-            statusBadge.innerHTML = '<span class="status-dot w-1.5 h-1.5 shrink-0" style="background-color: var(--sage-text); border-radius: 1px;" aria-hidden="true"></span><span>Active</span>';
-            statusBadge.className = 'swiss-badge flex items-center gap-1 swiss-text-primary';
-          } else {
-            statusBadge.innerHTML = 'Idle';
-            statusBadge.className = 'swiss-badge flex items-center gap-1 swiss-text-muted';
-          }
-        }
+        setOptimizerStatusBadge(document.getElementById('cm-status-badge'), Boolean(d.active));
         if (document.getElementById('cm-reduction-pct')) {
           const pct = d.reduction_pct || 0;
           const pctStr = (pct >= 99 && pct < 100) ? pct.toFixed(2) : pct.toFixed(1);
@@ -489,9 +490,6 @@ let currentState = null;
         if (document.getElementById('cm-bytes-sandboxed')) {
           const mb = ((d.bytes_sandboxed || 0) / (1024 * 1024)).toFixed(1);
           document.getElementById('cm-bytes-sandboxed').innerText = `${mb} MB`;
-        }
-        if (document.getElementById('cm-dollars-saved')) {
-          document.getElementById('cm-dollars-saved').innerText = `$${(d.dollars_saved || 0).toFixed(2)}`;
         }
         if (document.getElementById('cm-total-calls')) {
           document.getElementById('cm-total-calls').innerText = fmt(d.total_calls || 0);
@@ -506,6 +504,76 @@ let currentState = null;
         renderContextModeDaily(d);
       } catch (e) {
         console.error('Failed to load context-mode stats:', e);
+      }
+    }
+
+    const AGY_FAST_SHORT_NAMES = {
+      batch_search: 'search',
+      apply_edits: 'edit',
+      quick_outline: 'outline',
+      read_slices: 'slice',
+      run_checks: 'check'
+    };
+
+    async function loadAgyFastData() {
+      try {
+        const res = await fetch('/api/agy-fast/stats');
+        const d = await res.json();
+
+        const verBadge = document.getElementById('af-version-badge');
+        if (verBadge) {
+          verBadge.innerText = d.version ? `v${d.version}` : 'Not Installed';
+          const modeLabel = d.tool_loading && d.tool_loading !== 'unknown' ? d.tool_loading : 'mcp';
+          verBadge.title = d.installed
+            ? `agy-fast v${d.version || '--'} (${modeLabel} mode · hook ${d.hook_ready ? 'ok' : 'missing'})`
+            : 'agy-fast plugin not detected';
+        }
+
+        const statusLabel = d.active ? 'Active' : (d.installed ? 'Ready' : 'Offline');
+        setOptimizerStatusBadge(document.getElementById('af-status-badge'), Boolean(d.active), statusLabel, statusLabel);
+
+        const batchBadge = document.getElementById('af-batch-badge');
+        if (batchBadge) {
+          const mult = Number(d.batch_multiplier || 0);
+          batchBadge.innerText = `${mult.toFixed(1)}× batch`;
+        }
+
+        if (document.getElementById('af-batched-ops')) {
+          document.getElementById('af-batched-ops').innerText = fmt(d.batched_ops || 0);
+        }
+        if (document.getElementById('af-turns-saved')) {
+          document.getElementById('af-turns-saved').innerText = fmt(d.turns_saved || 0);
+        }
+        if (document.getElementById('af-total-calls')) {
+          document.getElementById('af-total-calls').innerText = fmt(d.total_calls || 0);
+        }
+
+        if (document.getElementById('af-calls-detail')) {
+          const tools = Object.entries(d.by_tool || {})
+            .map(([t, info]) => `${AGY_FAST_SHORT_NAMES[t] || t}: ${info.calls}`)
+            .join(' · ');
+          document.getElementById('af-calls-detail').innerText = tools || (d.installed ? 'Ready for batched MCP calls' : 'Plugin not installed');
+        }
+
+        const healthEl = document.getElementById('af-health-detail');
+        if (healthEl) {
+          const h = d.health || {};
+          const spills = h.spills || 0;
+          const errs = (h.errors || 0) + (h.corrupted_args || 0);
+          const sessFast = d.sessions_with_fast || 0;
+          const snaps = d.sessions_with_snapshot || 0;
+          healthEl.innerText = errs > 0
+            ? `${sessFast} sess · ${spills} spills · ${errs} err`
+            : `${sessFast} sess · ${snaps} snap · ${spills} spills`;
+          const speedTip = (d.with_fast_tps > 0 && d.baseline_tps > 0)
+            ? ` · ${d.with_fast_tps} vs ${d.baseline_tps} tok/s`
+            : '';
+          healthEl.title = `Sessions: ${sessFast}/${d.total_sessions || 0} · Snapshots: ${snaps} · Spills: ${spills} · Errors: ${h.errors || 0} · Corrupted args: ${h.corrupted_args || 0}${speedTip}`;
+        }
+
+        renderAgyFastDaily(d);
+      } catch (e) {
+        console.error('Failed to load agy-fast stats:', e);
       }
     }
 
@@ -542,8 +610,8 @@ let currentState = null;
       return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
 
-    function renderContextModeDaily(d) {
-      const container = document.getElementById('cm-daily-bars');
+    function renderOptimizerActivityDaily(d, opts) {
+      const container = document.getElementById(opts.containerId);
       if (!container) return;
       container.innerHTML = '';
 
@@ -552,15 +620,15 @@ let currentState = null;
       const activeDays = d.active_days || 0;
       const peakDay = d.peak_day;
 
-      const titleEl = document.getElementById('cm-chart-title');
-      const activeBadge = document.getElementById('cm-active-days-label');
-      const peakBadge = document.getElementById('cm-peak-day-badge');
+      const titleEl = document.getElementById(opts.titleId);
+      const activeBadge = document.getElementById(opts.activeId);
+      const peakBadge = document.getElementById(opts.peakId);
 
       if (daily.length === 0) {
-        if (titleEl) titleEl.innerText = 'Shield Activity by Day (All Time)';
+        if (titleEl) titleEl.innerText = opts.dayTitle;
         if (activeBadge) activeBadge.innerText = '0d active';
         if (peakBadge) peakBadge.innerText = 'Peak: --';
-        container.innerHTML = '<div class="w-full h-full flex items-center justify-center text-[10px] font-mono swiss-text-muted">No context-mode history yet</div>';
+        container.innerHTML = `<div class="w-full h-full flex items-center justify-center text-[10px] font-mono swiss-text-muted">${opts.emptyText}</div>`;
         return;
       }
 
@@ -578,14 +646,15 @@ let currentState = null;
           const ym = (item.date || '').slice(0, 7);
           if (!ym) return;
           if (!monthMap.has(ym)) {
-            monthMap.set(ym, { key: ym, calls: 0, sessions: 0, tokens_saved: 0, active_days: 0 });
+            monthMap.set(ym, { key: ym, calls: 0, sessions: 0, secMetric: 0, terMetric: 0, active_days: 0 });
           }
           const m = monthMap.get(ym);
           const c = item.calls || 0;
           const s = item.sessions || 0;
           m.calls += c;
           m.sessions += s;
-          m.tokens_saved += (item.tokens_saved || 0);
+          m.secMetric += (item[opts.secondaryField] || 0);
+          m.terMetric += (opts.tertiaryField ? (item[opts.tertiaryField] || 0) : 0);
           if (c > 0 || s > 0) m.active_days += 1;
         });
         series = Array.from(monthMap.values());
@@ -603,7 +672,7 @@ let currentState = null;
         });
 
         const spansMultiYear = series.length > 1 && series[0].key.slice(0, 4) !== series[series.length - 1].key.slice(0, 4);
-        if (titleEl) titleEl.innerText = 'Shield Activity by Month (All Time)';
+        if (titleEl) titleEl.innerText = opts.monthTitle;
         if (activeBadge) activeBadge.innerText = `${activeMonths}m/${series.length}m active`;
         if (peakBadge) peakBadge.innerText = peakKey ? `Peak: ${formatShortMonth(peakKey, spansMultiYear)}` : 'Peak: --';
       } else {
@@ -611,10 +680,11 @@ let currentState = null;
           key: item.date,
           calls: item.calls || 0,
           sessions: item.sessions || 0,
-          tokens_saved: item.tokens_saved || 0,
+          secMetric: item[opts.secondaryField] || 0,
+          terMetric: opts.tertiaryField ? (item[opts.tertiaryField] || 0) : 0,
           active_days: ((item.calls || 0) > 0 || (item.sessions || 0) > 0) ? 1 : 0
         }));
-        if (titleEl) titleEl.innerText = 'Shield Activity by Day (All Time)';
+        if (titleEl) titleEl.innerText = opts.dayTitle;
         if (activeBadge) activeBadge.innerText = totalDays > 0 ? `${activeDays}d/${totalDays}d active` : '0d active';
         if (peakBadge) peakBadge.innerText = peakDay ? `Peak: ${formatShortDay(peakDay)}` : 'Peak: --';
       }
@@ -646,24 +716,23 @@ let currentState = null;
       const spansMultiYear = useMonthly && n > 1 && series[0].key.slice(0, 4) !== series[n - 1].key.slice(0, 4);
       const colPadding = useMonthly ? (n > 24 ? '0 1px' : '0 2px') : (n > 60 ? '0 0.5px' : n > 35 ? '0 1px' : '0 1.5px');
       const barMinWidth = useMonthly ? '4px' : (n > 90 ? '1px' : '2px');
-      const barMaxWidth = useMonthly ? '18px' : '10px';
+      const barMaxWidth = useMonthly ? '18px' : (n === 1 ? '22px' : n <= 7 ? '16px' : '10px');
       const maxBarPx = 38;
       const frag = document.createDocumentFragment();
 
       series.forEach((item, idx) => {
         const calls = item.calls;
         const sessions = item.sessions;
-        const saved = item.tokens_saved;
         const metric = useCalls ? calls : sessions;
 
         let barPx = 2;
-        let barCls = 'cm-bar-empty';
+        let barCls = opts.barEmpty;
         if (calls > 0) {
           barPx = Math.max(5, Math.round((metric / denom) * maxBarPx));
-          barCls = (item.key === peakKey) ? 'cm-bar-peak' : 'cm-bar-active';
+          barCls = (item.key === peakKey) ? opts.barPeak : opts.barActive;
         } else if (sessions > 0) {
           barPx = Math.max(4, useCalls ? 6 : Math.round((sessions / denom) * maxBarPx));
-          barCls = 'cm-bar-idle';
+          barCls = opts.barIdle;
         }
 
         const col = document.createElement('div');
@@ -676,11 +745,7 @@ let currentState = null;
         const tipSub = useMonthly
           ? `${item.active_days}d · ${sessions} sess`
           : `${sessions} sess`;
-        tip.innerHTML = `
-          <div class="font-bold swiss-text-primary">${tipTitle}</div>
-          <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${tipSub})</span></div>
-          <div class="swiss-text-secondary text-[9px]">${fmt(saved)} tok shielded</div>
-        `;
+        tip.innerHTML = opts.renderTooltip(tipTitle, calls, tipSub, item);
 
         const bar = document.createElement('div');
         bar.className = `swiss-bar ${barCls}`;
@@ -689,7 +754,7 @@ let currentState = null;
         bar.style.minWidth = barMinWidth;
 
         const lbl = document.createElement('div');
-        const alignCls = (idx === 0) ? 'justify-start' : (idx === n - 1) ? 'justify-end' : 'justify-center';
+        const alignCls = n === 1 ? 'justify-center' : (idx === 0) ? 'justify-start' : (idx === n - 1) ? 'justify-end' : 'justify-center';
         lbl.className = `h-3.5 flex items-center ${alignCls} w-full select-none mt-0.5 overflow-visible`;
         if (labelIndices.has(idx)) {
           const shortLbl = useMonthly
@@ -708,6 +773,51 @@ let currentState = null;
       container.appendChild(frag);
     }
 
+    function renderContextModeDaily(d) {
+      renderOptimizerActivityDaily(d, {
+        containerId: 'cm-daily-bars',
+        titleId: 'cm-chart-title',
+        activeId: 'cm-active-days-label',
+        peakId: 'cm-peak-day-badge',
+        dayTitle: 'Shield Activity by Day (All Time)',
+        monthTitle: 'Shield Activity by Month (All Time)',
+        emptyText: 'No context-mode history yet',
+        secondaryField: 'tokens_saved',
+        barPeak: 'cm-bar-peak',
+        barActive: 'cm-bar-active',
+        barIdle: 'cm-bar-idle',
+        barEmpty: 'cm-bar-empty',
+        renderTooltip: (title, calls, tipSub, item) => `
+          <div class="font-bold swiss-text-primary">${title}</div>
+          <div class="swiss-text-sage font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${tipSub})</span></div>
+          <div class="swiss-text-secondary text-[9px]">${fmt(item.secMetric)} tok shielded</div>
+        `
+      });
+    }
+
+    function renderAgyFastDaily(d) {
+      renderOptimizerActivityDaily(d, {
+        containerId: 'af-daily-bars',
+        titleId: 'af-chart-title',
+        activeId: 'af-active-days-label',
+        peakId: 'af-peak-day-badge',
+        dayTitle: 'Fast Activity by Day (All Time)',
+        monthTitle: 'Fast Activity by Month (All Time)',
+        emptyText: d.installed ? 'No agy-fast calls logged yet' : 'agy-fast plugin not installed',
+        secondaryField: 'batched_ops',
+        tertiaryField: 'turns_saved',
+        barPeak: 'af-bar-peak',
+        barActive: 'af-bar-active',
+        barIdle: 'af-bar-idle',
+        barEmpty: 'af-bar-empty',
+        renderTooltip: (title, calls, tipSub, item) => `
+          <div class="font-bold swiss-text-primary">${title}</div>
+          <div class="swiss-text-accent font-semibold">${fmt(calls)} calls <span class="swiss-text-muted font-normal">(${tipSub})</span></div>
+          <div class="swiss-text-secondary text-[9px]">${fmt(item.secMetric)} ops · ${fmt(item.terMetric)} turns saved</div>
+        `
+      });
+    }
+
 async function loadAnalytics() {
       const acc = document.getElementById('analytics-account-select').value;
       try {
@@ -724,8 +834,9 @@ async function loadAnalytics() {
       // Feature 5: Load 24-Hour Productivity Data
       loadHourlyData(acc);
 
-      // Context-Mode Optimizer Live Stats
+      // Optimizer Live Stats (context-mode + agy-fast)
       loadContextModeData();
+      loadAgyFastData();
     }
 
     function renderAnalyticsData(data) {

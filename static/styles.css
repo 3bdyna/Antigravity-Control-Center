@@ -573,61 +573,48 @@ span svg + span,
 }
 
 /* ==========================================================================
-   4. context-mode (npm) Compact Split Banner Card + 24h Activity
+   4. Dual Optimizer Cards: context-mode (npm) & agy-fast (MCP)
    ========================================================================== */
-.cm-card {
-  background-color: var(--bg-card) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-left: 3px solid var(--sage-text) !important;
-  border-radius: var(--radius-card) !important;
-  padding: 11px 14px;
-}
-
-.cm-grid {
+.opt-dual-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 14px;
   align-items: stretch;
 }
-@media (min-width: 900px) {
-  .cm-grid {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
-    gap: 16px;
+@media (min-width: 820px) {
+  .opt-dual-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.cm-left {
+.cm-card,
+.af-card {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-card) !important;
+  padding: 11px 14px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
 }
+.cm-card {
+  border-left: 3px solid var(--sage-text) !important;
+}
+.af-card {
+  border-left: 3px solid var(--accent) !important;
+}
 
-.cm-metrics-row {
+.opt-chart-block {
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.cm-cost-block {
-  flex-shrink: 0;
-  min-width: 92px;
-}
-
-.cm-cost-val {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  color: var(--sage-text);
-  margin-top: 2px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .cm-strip {
-  flex: 1 1 0%;
+  width: 100%;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -652,26 +639,12 @@ span svg + span,
   margin-top: 2px;
 }
 
-.cm-right {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-}
-@media (min-width: 900px) {
-  .cm-right {
-    border-left: 1px solid var(--border-subtle);
-    padding-left: 14px;
-  }
-}
-
 .cm-hourly-well {
   background-color: var(--bg-well);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   position: relative;
-  height: 70px;
+  height: 68px;
   width: 100%;
   padding: 8px 8px 4px 8px;
   display: flex;
@@ -698,6 +671,14 @@ span svg + span,
 .cm-bar-idle { background-color: var(--chart-night); }
 .group:hover .cm-bar-idle { background-color: var(--chart-night-hover); }
 .cm-bar-empty { background-color: var(--hm-0); }
+
+.af-bar-peak { background-color: var(--chart-peak); }
+.group:hover .af-bar-peak { background-color: var(--chart-peak-hover); }
+.af-bar-active { background-color: #9c3c28; }
+.group:hover .af-bar-active { background-color: #c2482f; }
+.af-bar-idle { background-color: var(--chart-night); }
+.group:hover .af-bar-idle { background-color: var(--chart-night-hover); }
+.af-bar-empty { background-color: var(--hm-0); }
 
 /* ==========================================================================
    5. Heatmap & Tooltips

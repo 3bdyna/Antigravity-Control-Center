@@ -89,6 +89,7 @@ from token_tracker import (
     backup_sqlite_db,
     generate_executive_html_report,
     get_context_mode_stats,
+    get_agy_fast_stats,
     is_ai_generating
 )
 from ui_html import load_static_bytes
@@ -616,6 +617,11 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/context-mode/stats":
             stats = get_context_mode_stats()
+            self.send_json(stats)
+            return
+
+        if path == "/api/agy-fast/stats":
+            stats = get_agy_fast_stats()
             self.send_json(stats)
             return
 
