@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 from version import APP_VERSION, GITHUB_REPO, updates_dir
 
@@ -86,9 +87,29 @@ class TrustedHTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
         return redirected
 
 
+def _find_bundled_cafile() -> Optional[str]:
+    """Locate a bundled cacert.pem in PyInstaller frozen layouts, if present."""
+    candidates: list[str] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(os.path.join(meipass, "cacert.pem"))
+    exe_dir = os.path.dirname(sys.executable)
+    if exe_dir:
+        candidates.append(os.path.join(exe_dir, "_internal", "cacert.pem"))
+        candidates.append(os.path.join(exe_dir, "cacert.pem"))
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def build_secure_opener() -> urllib.request.OpenerDirector:
     """Create a urllib opener with strict TLS verification and trusted-host redirects."""
     ssl_ctx = ssl.create_default_context()
+    ssl_ctx.load_default_certs(ssl.Purpose.SERVER_AUTH)
+    cafile = _find_bundled_cafile()
+    if cafile:
+        ssl_ctx.load_verify_locations(cafile=cafile)
     return urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl_ctx),
         TrustedHTTPSRedirectHandler(),

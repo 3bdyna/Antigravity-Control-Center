@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import certifi
+
 
 a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('app_icon.ico', '.'), ('static', 'static')],
+    datas=[('app_icon.ico', '.'), ('static', 'static'), (certifi.where(), '.')],
     hiddenimports=['PyQt5.QtWebEngineWidgets', 'PyQt5.QtWebEngineCore', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui'],
     hookspath=[],
     hooksconfig={},
