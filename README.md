@@ -9,7 +9,7 @@
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 > [!NOTE]
-> **Honest "Vibe-Coded" Disclaimer:** I'm not a professional programmer. This project was mostly vibe-coded with AI because I wanted a cleaner, faster dashboard for my own Antigravity accounts, quotas, and token usage. Expect the occasional quirk!
+> **Note:** I'm not a professional programmer. This project was vibe-coded with AI because I wanted a cleaner, faster dashboard for my own Antigravity accounts, quotas, and token usage. Expect the features that totally are NOT bugs.
 
 ---
 
