@@ -1,118 +1,93 @@
 # Antigravity Control Center
 
-A lightweight **Windows desktop dashboard and system tray companion for Google Antigravity IDE**. Manage multiple Google accounts with one-click switching, track live 5-hour and weekly AI model quotas, explore real-time token analytics and coding heatmaps, and inspect active agent sessions — all from a fast, local-first Control Center.
-
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square)
-![Version](https://img.shields.io/badge/Version-v1.4.0-2ea44f?style=flat-square)
-![Python](https://img.shields.io/badge/Python-PyQt5%20%2B%20WebEngine-3776AB?style=flat-square)
-![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20DPAPI-4479A1?style=flat-square)
+A simple, fun Windows companion app for **Google Antigravity IDE** that lives in your system tray.  
+Switch between Google accounts in one click, keep an eye on your live AI quotas, track your daily token stats and coding streaks, and peek inside active AI sessions — all in one clean dashboard.
 
 ---
 
-## Why Use It?
+## What Can It Do?
 
-Using **Google Antigravity IDE** across multiple accounts or long coding sessions makes it easy to lose track of rate limits, reset timers, and token usage. **Antigravity Control Center** gives you a single cockpit that sits quietly in your Windows system tray and opens instantly whenever you want to:
+If you use **Google Antigravity IDE** every day (especially with more than one Google account), it's annoying to guess how much quota you have left or log out and back in just to switch accounts. **Antigravity Control Center** solves that and gives you fun stats on how you code with AI.
 
-- **See your remaining Gemini & Claude quotas** across every enrolled account at a glance.
-- **Switch accounts in one click** without manually logging in and out or losing track of which profile is active.
-- **Geek out on your coding telemetry** — live token burn rate (`tok/s` and `tok/h`), prompt cache hit rate, 52-week coding streaks, and 24-hour day/night productivity charts.
-- **Inspect live AI sessions & subagents** — check context window headroom, auto-compaction counts, and turn-by-turn token breakdowns.
+### 1. Accounts & Live Quotas
+- **See all your accounts in one place:** View your **5-hour** and **weekly** quota bars for Gemini and Claude models, along with countdown timers for when they reset.
+- **1-Click Account Switching:** Switch your active Antigravity account straight from the app or right from the **Windows system tray** icon.
+- **Smart Suggestions:** Automatically highlights when your current account is healthy, running low, or which backup account is best to switch to next.
+- **Easy Sign-In:** Import the account you're already using in Antigravity with one click, or add extra Google accounts through your browser.
+- **Safe Local Storage:** Your saved logins are encrypted using Windows' built-in security (DPAPI) and stay on your own PC.
 
----
-
-## Key Features
-
-### 1. Multi-Account Switcher & Quota Monitor
-- **Parallel Quota Polling:** Fetches **5-hour cycle** and **weekly quota** percentages with local reset countdowns across all enrolled accounts simultaneously.
-- **Smart Account Recommendations:** Highlights whether your active account is healthy, low on quota, on cooldown, or ready for a better standby fallback based on remaining capacity and upcoming weekly reset urgency.
-- **One-Click Switching:** Swaps the active `gemini:antigravity` session in Windows Credential Manager and reloads/restarts Antigravity cleanly — accessible from the dashboard or right from the **system tray menu**.
-- **Easy Enrollment:** Snapshot your currently signed-in Antigravity profile in one click, or authorize additional Google accounts via the built-in browser OAuth flow.
-- **Windows DPAPI Encryption:** Saved credential blobs are encrypted locally with Windows DPAPI (`AGDPAPI1`).
-
-### 2. Token Analytics & Activity Heatmaps
-- **Real-Time SQLite Tracking:** A background transcript watcher tails local Antigravity session logs into a local `tokens_history.db` (SQLite WAL mode) and pushes live updates over Server-Sent Events (SSE).
-- **Core KPIs:** Track **Total Token Volume**, **Prompt Cache Hit %** (saved quota bandwidth), **Input/Output Volume Ratio**, and **Average Output Speed** (`tok/s`, `tok/min`, `tok/h`). Filter by **Today**, **Last 7D**, **Month**, **Year**, or **All Time**, per account or combined.
-- **52-Week Coding Heatmap & Streaks:** GitHub-style activity heatmap showing daily token volume, turns, current streak, active days, and top model per day.
-- **Timeline & 24-Hour Cadence:** Inspect daily distribution bars alongside a 24-hour local-time chart comparing day vs. night coding windows.
-- **Model Split & Live Event Log:** See token share by model and browse recent SQL-logged turns.
-- **Optimizer Telemetry:** Dedicated cards tracking savings and daily activity from `context-mode` (tokens shielded & sandboxed bytes) and `agy-fast` MCP (batched ops & turns saved).
-- **Exports & Backups:** Generate a standalone **Executive HTML Report**, download raw events as **CSV** or **JSON**, or create an instant point-in-time **SQLite DB backup**.
+### 2. Token Analytics & Coding Heatmaps
+- **Live Usage Stats:** See your total tokens used, prompt cache hit rate (how much quota you're saving), input vs. output ratio, and live speed (`tokens/sec`).
+- **52-Week Coding Heatmap:** A GitHub-style activity grid showing your daily coding volume, active days, and current streak.
+- **Day vs. Night Charts:** Find out what hours of the day you code the most, plus which AI models you rely on most.
+- **Optimizer Stats:** Tracks token and turn savings if you use `context-mode` or `agy-fast`.
+- **Easy Exports:** Filter by Today, 7 Days, Month, Year, or All Time, then export a neat **HTML report**, **CSV**, **JSON**, or back up your history database in one click.
 
 ### 3. Session & Fleet Inspector
-- **Live Conversation & Subagent Fleet:** Switch between active main conversations and optional background subagent workers.
-- **Context Window & Compaction Tracking:** Monitor active context volume against the context limit (e.g., `512k`), compaction count, and prompt cache acceleration.
-- **Expandable Turn Explorer:** Click any step in a conversation to inspect prompt, output, cache hit, total tokens, and efficiency per turn.
-- **Maintenance Tools:** View daemon and DPAPI health, clean stale session lock files, and inspect or clear the live system activity log.
+- **Peek Inside Live Chats:** Watch your active Antigravity conversations (and background subagents) update in real time.
+- **Context Window Meter:** See how full a chat's memory is and how many times it has compacted.
+- **Step-by-Step Breakdown:** Click any turn in a conversation to see how many tokens that step used.
+- **Quick Cleanup:** Clean up leftover session lock files or check the live activity log if anything looks stuck.
 
-### 4. Lightweight System Tray & Antigravity IDE Top-Bar Indicator
-- **Low-Memory Architecture:** The background tray daemon handles the local HTTP/SSE server (`127.0.0.1:28795`), transcript watcher, and tray menu without loading Chromium. The frameless `PyQtWebEngine` window launches on demand (`--ui`) and frees its Chromium RAM when closed to the tray.
-- **IDE Top-Bar Integration (`scripts/`):** Includes `auto_patch_antigravity.js` (watched by `AntigravityAsarWatchdog`) to inject a live quota status pill directly into Antigravity's top bar and keep it working after IDE updates (without interfering with the official `antigravity-updater`), plus `antigravity-drag-daemon.js` for draggable titlebars via CDP (`DevToolsActivePort`).
-
----
-
-## Project Structure
-
-```text
-.
-├── main.py                        # Entry point launcher
-├── app.py                         # HTTP/SSE server (:28795), system tray daemon, PyQtWebEngine UI, ASAR watchdog
-├── switcher.py                    # Parallel quota engine, Windows DPAPI credential storage, account switcher
-├── token_tracker.py               # Real-time transcript watcher, SQLite WAL analytics, HTML report generator
-├── ui_html.py                     # Static asset resolver (source & PyInstaller bundles)
-├── AntigravityControlCenter.spec  # PyInstaller Windows build specification
-├── static/                        # Frontend dashboard (index.html, app.js, styles.css, tailwind.css)
-└── scripts/                       # Optional Antigravity IDE top-bar indicator & window-drag helpers
-```
+### 4. Built to Stay Out of Your Way
+- **Tiny Tray Companion:** Runs quietly in your Windows system tray using minimal memory. Closing the window frees the display memory while keeping tracking running in the background.
+- **Antigravity Top-Bar Pill (Optional):** Includes helper scripts in `scripts/` that can place a small live quota indicator right inside Antigravity IDE's top bar.
 
 ---
 
-## Getting Started (Windows)
+## Running the App
 
-### Prerequisites
-- **OS:** Windows 10 or Windows 11 (uses Windows DPAPI, Windows Credential Manager, and Win32 named mutexes)
-- **Python:** Python 3.10+ with `PyQt5` and `PyQtWebEngine`
-- **Optional:** Node.js (only needed if using the `scripts/` JS helpers for IDE `app.asar` patching or the CDP drag daemon)
+### Option A: Using the Windows `.exe` (Standalone Build)
+If you build or download the standalone Windows `.exe` version, **you do NOT need to install Python or any Python libraries** — everything the app needs is already packed inside it.
 
-### Run from Source
+> **Note:** The only optional extra is **Node.js**, and only if you choose to use the `scripts/` add-on for the Antigravity IDE top-bar indicator. Everything in the Control Center app itself works without it.
 
-1. Clone the repository:
+---
+
+### Option B: Running from Source (Developers)
+
+**What you need:**
+- **Windows 10 or Windows 11**
+- **Python 3.10+**
+- **Node.js** *(optional — only needed if you use the `scripts/` IDE top-bar helper)*
+
+**Steps:**
+
+1. Clone this repo:
    ```powershell
    git clone https://github.com/3bdyna/Antigravity-Control-Center.git
    cd Antigravity-Control-Center
    ```
 
-2. Install the UI dependencies:
+2. Install the UI package:
    ```powershell
    pip install PyQt5 PyQtWebEngine
    ```
 
-3. Launch the Control Center:
+3. Start the app:
    ```powershell
    python main.py
    ```
-   Useful launch flags:
-   - `python main.py --daemon` — Start only the lightweight system tray & API server in the background.
-   - `python main.py --ui` — Open the Control Center window (starts the daemon automatically if needed).
 
-### Build Standalone Windows `.exe`
+**Optional launch flags:**
+- `python main.py --daemon` — Starts quietly in the system tray without opening the window.
+- `python main.py --ui` — Opens the dashboard window.
 
+### Building Your Own `.exe`
+Want to package it into a standalone Windows app?
 ```powershell
 pip install pyinstaller
 pyinstaller AntigravityControlCenter.spec --noconfirm
 ```
-
-The compiled application bundle is output to `dist/AntigravityControlCenter/AntigravityControlCenter.exe`.
-
----
-
-## Privacy & Local Data
-
-All data stays on your machine:
-- Local state, encrypted account credentials (`accounts/`), quota cache (`quotas_cache.json`), and token history (`tokens_history.db`) are stored under `%USERPROFILE%\.gemini\antigravity-switcher\`.
-- No analytics or credentials are sent to any third-party server — API calls are made solely to Google OAuth / Antigravity endpoints for your own enrolled accounts and locally on `127.0.0.1:28795`.
+Your `.exe` will be created in `dist/AntigravityControlCenter/AntigravityControlCenter.exe`.
 
 ---
 
-## Keywords
+## Your Data Stays Private
 
-`Google Antigravity` · `Antigravity IDE` · `Antigravity Control Center` · `Multi-Account Switcher` · `AI Quota Monitor` · `Token Tracker` · `LLM Usage Analytics` · `Prompt Cache Analytics` · `Coding Heatmap` · `Session Inspector` · `Windows System Tray` · `PyQt5` · `SQLite` · `DPAPI`
+Everything is stored locally on your computer under `%USERPROFILE%\.gemini\antigravity-switcher\` (saved encrypted accounts, quota cache, and your local `tokens_history.db` database). Nothing is uploaded to any third-party server.
+
+---
+
+## Search Keywords
+`Google Antigravity` · `Antigravity IDE` · `Antigravity Control Center` · `Multi-Account Switcher` · `AI Quota Monitor` · `Token Tracker` · `LLM Usage Analytics` · `Coding Heatmap` · `Session Inspector` · `Windows System Tray` · `Gemini` · `Claude`
