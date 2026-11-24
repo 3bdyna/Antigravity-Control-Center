@@ -908,7 +908,6 @@ async function loadAnalytics() {
         const hPct = Math.max(3, Math.round((tok / maxTokens) * 78));
         const pctOfPeak = maxTokens > 0 ? Math.round((tok / maxTokens) * 100) : 0;
         const isRush = rushSet.has(h);
-        const isPersonalPeak = (h === peakHour && tok > 0);
 
         const col = document.createElement('div');
         col.className = `flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative cursor-pointer px-[1px]${isRush ? ' ai-rush-col' : ''}`;
@@ -929,12 +928,10 @@ async function loadAnalytics() {
           ${isRush ? '<div class="ai-rush-tip-badge">Google AI Rush Hour (5–11 AM PT)</div>' : ''}
         `;
 
-        // Bar coloring: Rush hours are red, Personal Peak is sky-400, Daytime is slate-500, Night is zinc-700
+        // Bar coloring: Rush hours are red, Daytime is slate-500, Night is zinc-700
         let barColor = 'bg-slate-500/70 hover:bg-slate-400 border-slate-400/20';
         if (isRush) {
-          barColor = isPersonalPeak ? 'ai-rush-bar-peak' : 'ai-rush-bar';
-        } else if (isPersonalPeak) {
-          barColor = 'bg-sky-400/90 hover:bg-sky-300 border-sky-300/30';
+          barColor = 'ai-rush-bar';
         } else if (h < 7 || h >= 22) {
           barColor = 'bg-zinc-700/60 hover:bg-zinc-600 border-zinc-600/20';
         }
