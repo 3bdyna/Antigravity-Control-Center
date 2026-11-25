@@ -1,6 +1,8 @@
 # Antigravity Control Center
 
-**A fast, local-first Windows dashboard for managing Google Antigravity IDE accounts, tracking live 5-hour & weekly quotas, and inspecting real-time token & subagent usage.**
+**Free, open-source Windows tray app for Google Antigravity IDE — instant multi-account switcher, real-time model quota tracker, token & session analytics, and a live quota pill in the IDE top bar.**
+
+[![Download Latest Windows Installer (.exe)](https://img.shields.io/badge/Download-Latest%20Windows%20Installer%20(.exe)-2ea44f?style=for-the-badge&logo=windows)](https://github.com/3bdyna/Antigravity-Control-Center/releases/latest)
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=flat-square)
 ![Version](https://img.shields.io/badge/Version-v1.4.1-2ea44f?style=flat-square)
@@ -8,36 +10,34 @@
 ![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20DPAPI-4479A1?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
-> [!NOTE]
-> **Note:** I'm not a professional programmer—this project was vibe-coded with AI because I wanted a cleaner, faster dashboard for my own Antigravity accounts, quotas, and token usage. Expect the occasional feature that is totally *not* a bug.
+> **100% local · Windows DPAPI-encrypted credentials · Zero telemetry · SHA-256 verified built-in auto-updater**
 
 ![Antigravity Control Center — Accounts & Quotas Overview](docs/screenshots/accounts-overview.png)
-*Multi-account overview with live 5-hour & weekly quota bars, DPAPI-encrypted storage, smart standby recommendations, and real-time token velocity.*
+*Multi-account overview for Google Antigravity IDE with live 5-hour & weekly quota bars, Windows DPAPI-encrypted storage, smart standby recommendations, and real-time token velocity.*
 
 ---
 
-## Why Use It?
+## Why Antigravity Control Center?
 
-Antigravity Control Center pairs a tiny Windows system tray daemon (`~20–30 MB` RAM, local `127.0.0.1:28795` HTTP/SSE server) with an on-demand `PyQtWebEngine` dashboard that frees **100% of Chromium memory** the moment you close it back to the tray.
+Hitting model rate limits mid-session or guessing when your Google Antigravity IDE quotas reset breaks flow. Antigravity Control Center solves that with a lightweight Windows system tray daemon (`~20–30 MB` RAM) and an on-demand `PyQtWebEngine` dashboard that frees **100% of Chromium memory** when minimized back to the tray.
 
-- **1-Click Multi-Account Switching:** Enroll multiple Google Antigravity accounts via browser OAuth or snapshot your currently active profile straight from Windows Credential Manager. Credentials are encrypted locally at rest with **Windows DPAPI (`AGDPAPI1`)** using atomic writes—no plaintext tokens ever touch disk.
-- **Parallel Quota Polling:** Concurrently checks **5-hour cycle** and **weekly quotas** for both **Gemini** and **Claude & GPT** with reset countdowns and automatic recommendations (`Active`, `Active (Low)`, `Recommended`, `Cooldown`, `Standby`), plus optional **Auto-Pilot** switching.
-- **Real-Time Token & Session Analytics:** A background transcript watcher saves usage into SQLite (`tokens_history.db`, WAL mode) and streams live updates over SSE—tracking total volume, prompt cache hit rate, I/O ratio, output speed (`tok/s`), 52-week heatmaps, model breakdowns, and subagent fleets. Export anytime to **Executive HTML**, **CSV**, **JSON**, or a point-in-time SQLite backup.
-- **Optional IDE Top-Bar Integration:** Built-in `AntigravityAsarWatchdog` can inject a live quota pill right into the Antigravity IDE titlebar (`scripts/auto_patch_antigravity.js` & `scripts/antigravity-drag-daemon.js`) whenever Antigravity IDE and Node.js are installed, while leaving Antigravity's own updater cache (`%LOCALAPPDATA%\antigravity-updater`) untouched.
-- **SHA-256 Verified In-App Updates:** Checks GitHub Releases over HTTPS (with trusted-host redirect enforcement), waits for your confirmation before downloading, verifies the installer's SHA-256 checksum via `hmac.compare_digest`, and runs a clean 1-click upgrade.
-- **100% Local & Zero Telemetry:** No external analytics or tracking servers. Everything stays inside `%USERPROFILE%\.gemini\antigravity-switcher\`.
+- **Multi-Account Switcher for Google Antigravity IDE:** Switch between multiple Google accounts locally without manual re-login to manage model rate limits. Enroll accounts via browser OAuth or snapshot your active profile from Windows Credential Manager, with credentials encrypted locally using **Windows DPAPI (`AGDPAPI1`)** and atomic writes.
+- **Parallel Real-Time Quota Polling & Usage Monitor:** Concurrently track Antigravity model quotas across accounts with local caching (`quotas_cache.json`)—monitoring **5-hour cycle** and **weekly quotas** for **Gemini** and **Claude & GPT**, reset countdowns, smart recommendations (`Active`, `Active (Low)`, `Recommended`, `Cooldown`, `Standby`), and optional **Auto-Pilot** switching.
+- **Live Antigravity IDE Top-Bar Integration:** Automatically displays a live quota indicator pill inside the Antigravity IDE titlebar via `AntigravityAsarWatchdog` (`scripts/auto_patch_antigravity.js` & `scripts/antigravity-drag-daemon.js`) whenever Antigravity IDE and Node.js are installed, while keeping Antigravity's official updater cache (`%LOCALAPPDATA%\antigravity-updater`) untouched.
+- **Local Token & Session Analytics Dashboard (SQLite):** Background transcript watcher persists token usage into local SQLite (`tokens_history.db`, WAL mode) and streams live updates over local SSE (`127.0.0.1:28795`). Track token volume, prompt cache hit rate, I/O ratio, output speed (`tok/s`), 52-week heatmaps, model breakdowns, and subagent fleets, export to **Executive HTML / CSV / JSON / SQLite**, and auto-detect optional companion MCP/plugin tools (**[`context-mode`](https://github.com/mksglu/context-mode)** and **[`agy-fast`](https://github.com/INK-Q/agy-fast)**).
+- **Security & Privacy First:** All credentials are encrypted locally via Windows DPAPI, guarded by a single-instance low-memory tray daemon, and updated via a stdlib-only SHA-256 auto-updater (`updater.py`) with strict HTTPS, trusted-host redirect validation, and `hmac.compare_digest` verification.
 
 ---
 
 ## Inside the Dashboard
 
-### Token Analytics & Heatmaps
-See your lifetime or per-account usage at a glance—across **Today**, **Last 7D**, **Month**, **Year**, or **All Time**—with a 52-week coding activity heatmap, token timeline, 24-hour cadence split (day vs. night), model distribution bars, and a live SQL event log.
+### Token Analytics & 52-Week Heatmaps
+Inspect lifetime or per-account usage across **Today**, **Last 7D**, **Month**, **Year**, or **All Time**—including a 52-week coding activity heatmap, token timeline, 24-hour cadence split, model distribution bars, and a live SQL event log.
 
 ![Antigravity Control Center — All-Time Token Analytics](docs/screenshots/token-analytics.png)
 
 ### Session & Subagent Fleet Inspector
-Inspect individual conversations and background subagent workers turn by turn—monitor context-window headroom before auto-compaction, expand any step to inspect prompt/output/cache breakdowns, check daemon & DPAPI health, or review the system activity log.
+Inspect conversations and background subagent workers turn by turn—monitor context-window headroom before auto-compaction, expand steps for prompt/output/cache breakdowns, check daemon and DPAPI health, and view the system activity log.
 
 ![Antigravity Control Center — Session & Subagent Fleet Inspector](docs/screenshots/session-fleet-inspector.png)
 
@@ -46,28 +46,26 @@ Inspect individual conversations and background subagent workers turn by turn—
 ## Download & Install (Windows 10/11)
 
 ### Option A: Windows Installer *(Recommended)*
-1. Download the latest **`AntigravityControlCenter-Setup-*.exe`** from [**GitHub Releases**](https://github.com/3bdyna/Antigravity-Control-Center/releases/latest).
-2. Run the installer (per-user install into `%LOCALAPPDATA%\Programs\AntigravityControlCenter\`, no admin rights needed).
-   - **Windows SmartScreen Note:** Because this is an unsigned indie installer, Windows Defender SmartScreen may show a *"Windows protected your PC"* prompt. Click **More info** → **Run anyway** to continue.
+1. [**Download Latest Windows Installer (.exe)**](https://github.com/3bdyna/Antigravity-Control-Center/releases/latest) (`AntigravityControlCenter-Setup-*.exe`).
+2. Run the per-user installer (installs to `%LOCALAPPDATA%\Programs\AntigravityControlCenter\`, no administrator rights required).
+3. **Windows SmartScreen:** Because this is an unsigned open-source indie installer, SmartScreen may display *"Windows protected your PC"*. Click **More info** → **Run anyway**.
 
 > [!TIP]
-> **No Python or Node.js required:** The installer includes everything needed for the account switcher, quota tracker, tray daemon, and analytics dashboard. **Node.js** is only needed if you want the optional Antigravity IDE top-bar quota pill (`scripts/`).
+> **No Python or Node.js required:** The installer bundles everything needed for the multi-account switcher, quota monitor, tray daemon, and analytics dashboard. **Node.js** is only needed if you want the optional live Antigravity IDE top-bar quota pill.
 
 ### Option B: Run from Source
-
-**Prerequisites:** Windows 10/11, Python 3.10+, and *(optional)* Node.js for the IDE top-bar patcher.
+**Prerequisites:** Windows 10/11, Python 3.10+, and *(optional)* Node.js for the IDE top-bar pill.
 
 ```powershell
 git clone https://github.com/3bdyna/Antigravity-Control-Center.git
 cd Antigravity-Control-Center
-
 pip install PyQt5 PyQtWebEngine
 python main.py
 ```
 
-**Helpful CLI Flags:**
-- `python main.py --daemon` *(or `--tray`, `--minimized`, `--hidden`)* — Start only the background tray daemon and local API server (`127.0.0.1:28795`).
-- `python main.py --ui` — Open the frameless WebEngine dashboard (auto-starts `--daemon` if needed).
+**CLI Flags:**
+- `python main.py --daemon` *(or `--tray`, `--minimized`, `--hidden`)* — Start only the background tray daemon and local `127.0.0.1:28795` API/SSE server.
+- `python main.py --ui` — Open the frameless WebEngine dashboard (auto-starts `--daemon` if not running).
 
 ### Build Standalone `.exe` Locally
 
@@ -80,30 +78,37 @@ Output binary: `dist\AntigravityControlCenter\AntigravityControlCenter.exe`.
 
 ---
 
-## Recommended Companion Tools *(Optional)*
+## Optional Companion MCP Tools
 
-If you want to cut down token burn and speed up Antigravity coding sessions, Control Center pairs really well with these two open-source MCP tools:
+Control Center **automatically detects** these optional open-source MCP tools when installed locally and displays live token-savings and batching cards on the dashboard (if not installed, the cards stay hidden):
 
-- **[`context-mode`](https://github.com/mksglu/context-mode)** *(Elastic License 2.0)* — Sandboxes heavy command outputs and compacts context-window usage so long sessions stay lean and burn fewer tokens.
-- **[`agy-fast`](https://github.com/INK-Q/agy-fast)** *(MIT License)* — Batches codebase search, file outlines, multi-file edits, and concurrent checks to cut round-trips and speed up Antigravity workflows.
-
-> **Not Bundled & Zero Clutter:** Neither tool is bundled—install them separately from their own repositories if you'd like to try them. Control Center **automatically detects** them when installed and shows live token-savings and batching cards on your dashboard. If you don't use them, those cards stay **completely hidden** so your layout stays clean.
+- **[`context-mode`](https://github.com/mksglu/context-mode)** *(Elastic License 2.0)* — Sandboxes large command outputs and compacts context-window usage to reduce token burn.
+- **[`agy-fast`](https://github.com/INK-Q/agy-fast)** *(MIT License)* — Batches search, outlines, multi-file edits, and checks to reduce round-trips.
 
 ---
 
-## Privacy & `app.asar` Patcher Disclosure
+## FAQ & Troubleshooting
 
-- **Local-First Storage:** All DPAPI-encrypted account blobs (`accounts/`), quota cache (`quotas_cache.json`), SQLite token history (`tokens_history.db`), and logs (`autopilot.log`, `app_crash.log`) stay strictly on your machine in `%USERPROFILE%\.gemini\antigravity-switcher\`.
-- **Network Scope:** External requests go solely to Google OAuth / Antigravity quota endpoints for your enrolled accounts (plus optional GitHub Releases update checks). Dashboard UI traffic runs strictly on `127.0.0.1:28795`.
-- **Optional IDE Patcher:** If enabled, the top-bar quota indicator uses Node.js (`scripts/auto_patch_antigravity.js`) to inject a live quota pill via CDP or repack Antigravity's local `app.asar` when the IDE is closed. You can use Control Center purely as a standalone switcher and analytics dashboard without using the patcher.
+<details>
+<summary><strong>Where is my data stored, and how are Google credentials protected?</strong></summary>
 
----
+Everything stays locally in `%USERPROFILE%\.gemini\antigravity-switcher\` (`accounts/`, `quotas_cache.json`, `tokens_history.db`, `autopilot.log`, `app_crash.log`, `updates/`). Account credentials are encrypted at rest with **Windows DPAPI (`AGDPAPI1`)** using atomic file writes—no plaintext tokens touch disk, and no telemetry is sent anywhere. External network calls only contact Google OAuth / Antigravity quota endpoints for your enrolled accounts (plus optional GitHub Releases update checks).
 
-## Inspiration & Credits
+</details>
 
-This project was originally inspired by and built upon **[`demusraph/antigravity-control-center`](https://github.com/demusraph/antigravity-control-center)** (MIT License) by `@demusraph`. Huge thanks to `@demusraph` for the original concept—this repository has since been heavily redesigned and expanded with parallel quota polling, real-time SQLite token analytics, session/subagent inspection, an optional `app.asar` top-bar watchdog, and a native installer with SHA-256 verified auto-updates.
+<details>
+<summary><strong>How does the Antigravity IDE top-bar quota pill work, and is it required?</strong></summary>
 
-Released under the **MIT License** — see [`LICENSE`](LICENSE).
+It is completely optional. When both Google Antigravity IDE and Node.js are installed, `AntigravityAsarWatchdog` runs `scripts/auto_patch_antigravity.js` and `scripts/antigravity-drag-daemon.js` (over CDP) to display a live quota pill in the IDE top bar while preserving `%LOCALAPPDATA%\antigravity-updater`. You can still use the full switcher, quota monitor, and analytics dashboard without Node.js or the patcher.
+
+</details>
+
+<details>
+<summary><strong>How does the built-in auto-updater verify downloads?</strong></summary>
+
+`updater.py` uses Python's standard library only. It checks GitHub Releases over HTTPS, enforces `TRUSTED_DOWNLOAD_HOSTS` on every redirect hop, waits for user confirmation, verifies the installer's SHA-256 hash against `SHA256SUMS.txt` using `hmac.compare_digest` before staging, and launches a clean per-user upgrade that preserves `%USERPROFILE%\.gemini\antigravity-switcher\`.
+
+</details>
 
 ---
 
@@ -115,7 +120,7 @@ Released under the **MIT License** — see [`LICENSE`](LICENSE).
 ├── app.py                         # HTTP/SSE server (:28795), PyQt5 tray daemon, on-demand WebEngine UI, AsarWatchdog
 ├── switcher.py                    # Parallel quota fetcher, Windows DPAPI (AGDPAPI1) & Credential Manager switcher
 ├── token_tracker.py               # Transcript watcher, SQLite WAL analytics, heatmap/cadence queries, HTML report
-├── updater.py                     # HTTPS + SHA-256 verified GitHub Releases self-updater
+├── updater.py                     # Stdlib-only HTTPS + SHA-256 verified GitHub Releases self-updater
 ├── version.py                     # App version & user-data/update directory helpers
 ├── ui_html.py                     # Static asset loader (source & PyInstaller _MEIPASS / _internal layouts)
 ├── AntigravityControlCenter.spec  # PyInstaller spec bundling app.py, app_icon.ico, and static/
@@ -124,3 +129,11 @@ Released under the **MIT License** — see [`LICENSE`](LICENSE).
 ├── scripts/                       # Optional Node.js / VBS helpers for app.asar top-bar pill & CDP drag daemon
 └── docs/screenshots/              # Redacted README screenshots
 ```
+
+---
+
+## Inspiration & License
+
+Originally inspired by **[`demusraph/antigravity-control-center`](https://github.com/demusraph/antigravity-control-center)** (MIT License) by `@demusraph`, and expanded with parallel quota polling, SQLite WAL token analytics, session/subagent inspection, an optional `app.asar` top-bar watchdog, and a native installer with SHA-256 verified auto-updates.
+
+Released under the **MIT License** — see [`LICENSE`](LICENSE).
