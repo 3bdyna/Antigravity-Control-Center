@@ -1,0 +1,193 @@
+"""Unit tests for AntigravityAsarWatchdog fallback resolution, logging, and retry behavior."""
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import app
+
+
+class TestAntigravityAsarWatchdog(unittest.TestCase):
+    """Verify AntigravityAsarWatchdog script fallback, missing-script logging, and retry logic."""
+
+    def _make_watchdog(self, tmp_path: Path):
+        wd = app.AntigravityAsarWatchdog(check_interval_sec=3.0)
+        wd.asar_path = str(tmp_path / "app.asar")
+        wd.patch_script = str(tmp_path / "install" / "auto_patch_antigravity.js")
+        return wd
+
+    def test_resolve_patch_script_fallback_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+
+            install_script = Path(wd.patch_script)
+            meipass_dir = root / "meipass"
+            meipass_script = meipass_dir / "scripts" / "auto_patch_antigravity.js"
+            exe_dir = root / "exe_dir"
+            exe_file = exe_dir / "AntigravityControlCenter.exe"
+            internal_script = exe_dir / "_internal" / "scripts" / "auto_patch_antigravity.js"
+            source_app_file = root / "source" / "app.py"
+            source_script = root / "source" / "scripts" / "auto_patch_antigravity.js"
+
+            for p in (install_script, meipass_script, internal_script, source_script):
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("// stub", encoding="utf-8")
+
+            with mock.patch.object(sys, "_MEIPASS", str(meipass_dir), create=True), \
+                 mock.patch.object(sys, "executable", str(exe_file)), \
+                 mock.patch.object(app, "__file__", str(source_app_file)):
+                self.assertEqual(wd._resolve_patch_script(), str(install_script))
+
+                install_script.unlink()
+                self.assertEqual(wd._resolve_patch_script(), str(meipass_script))
+
+                meipass_script.unlink()
+                self.assertEqual(wd._resolve_patch_script(), str(internal_script))
+
+                internal_script.unlink()
+                self.assertEqual(wd._resolve_patch_script(), str(source_script))
+
+                source_script.unlink()
+                self.assertIsNone(wd._resolve_patch_script())
+
+    def test_missing_script_logs_once_and_resets_when_restored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            Path(wd.asar_path).write_bytes(b"asar")
+
+            fake_exe = root / "empty_exe" / "AntigravityControlCenter.exe"
+            fake_app_file = root / "empty_src" / "app.py"
+
+            with mock.patch.object(sys, "_MEIPASS", None, create=True), \
+                 mock.patch.object(sys, "executable", str(fake_exe)), \
+                 mock.patch.object(app, "__file__", str(fake_app_file)), \
+                 mock.patch.object(app, "log_msg") as mock_log, \
+                 mock.patch("app.subprocess.run") as mock_run:
+                wd.check_and_patch()
+                wd.check_and_patch()
+                wd.check_and_patch()
+
+                missing_msg = "[AsarWatchdog] Patch script not found in install dir or bundled fallback; skipping patch."
+                missing_calls = [c for c in mock_log.call_args_list if c.args[0] == missing_msg]
+                self.assertEqual(len(missing_calls), 1)
+                self.assertTrue(wd._missing_script_logged)
+                mock_run.assert_not_called()
+
+                # Restore script and verify flag resets and patcher runs
+                install_script = Path(wd.patch_script)
+                install_script.parent.mkdir(parents=True, exist_ok=True)
+                install_script.write_text("// restored", encoding="utf-8")
+
+                mock_run.return_value = mock.Mock(
+                    returncode=0,
+                    stdout="[AutoPatcher] Already patched. Nothing to do.\n",
+                    stderr="",
+                )
+                wd.check_and_patch()
+                self.assertFalse(wd._missing_script_logged)
+                mock_run.assert_called_once()
+
+                # Removing script again should log once more
+                install_script.unlink()
+                wd.check_and_patch()
+                wd.check_and_patch()
+                missing_calls = [c for c in mock_log.call_args_list if c.args[0] == missing_msg]
+                self.assertEqual(len(missing_calls), 2)
+
+    def test_initial_disk_patch_updates_mtime_and_notifies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            asar_file = Path(wd.asar_path)
+            asar_file.write_bytes(b"asar")
+            script_file = Path(wd.patch_script)
+            script_file.parent.mkdir(parents=True, exist_ok=True)
+            script_file.write_text("// patcher", encoding="utf-8")
+
+            expected_mtime = os.path.getmtime(wd.asar_path)
+
+            with mock.patch.object(app, "log_msg") as mock_log, \
+                 mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
+                 mock.patch("app.subprocess.run") as mock_run:
+                mock_run.return_value = mock.Mock(
+                    returncode=0,
+                    stdout="[AutoPatcher] Applying patch...\n[AutoPatcher] Successfully patched Antigravity app.asar!\n",
+                    stderr="",
+                )
+
+                wd.check_and_patch()
+
+                mock_run.assert_called_once()
+                self.assertEqual(mock_run.call_args.args[0], ["node", str(script_file)])
+                self.assertEqual(wd.last_asar_mtime, expected_mtime)
+                mock_notify.assert_called_once()
+                self.assertTrue(
+                    any("[AsarWatchdog] Initial asar check:" in c.args[0] for c in mock_log.call_args_list)
+                )
+
+                # Unchanged mtime on next tick should not invoke subprocess again
+                wd.check_and_patch()
+                mock_run.assert_called_once()
+
+    def test_failed_patch_preserves_mtime_respects_cooldown_and_retries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            asar_file = Path(wd.asar_path)
+            asar_file.write_bytes(b"asar")
+            script_file = Path(wd.patch_script)
+            script_file.parent.mkdir(parents=True, exist_ok=True)
+            script_file.write_text("// patcher", encoding="utf-8")
+
+            expected_mtime = os.path.getmtime(wd.asar_path)
+            current_time = [1000.0]
+
+            with mock.patch.object(app, "log_msg") as mock_log, \
+                 mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
+                 mock.patch("app.time.time", side_effect=lambda: current_time[0]), \
+                 mock.patch("app.subprocess.run") as mock_run:
+                # 1. First attempt fails (e.g., locked app.asar)
+                mock_run.return_value = mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr="[AutoPatcher] Patching failed: EBUSY: resource busy or locked\n",
+                )
+                wd.check_and_patch()
+
+                self.assertEqual(mock_run.call_count, 1)
+                self.assertIsNone(wd.last_asar_mtime)
+                mock_notify.assert_not_called()
+                self.assertTrue(
+                    any(
+                        "[AsarWatchdog] Patch script error (1): [AutoPatcher] Patching failed: EBUSY: resource busy or locked"
+                        in c.args[0]
+                        for c in mock_log.call_args_list
+                    )
+                )
+
+                # 2. Within 15s cooldown: skipped
+                current_time[0] = 1010.0
+                wd.check_and_patch()
+                self.assertEqual(mock_run.call_count, 1)
+
+                # 3. After 15s cooldown: retries and succeeds
+                current_time[0] = 1016.0
+                mock_run.return_value = mock.Mock(
+                    returncode=0,
+                    stdout="[AutoPatcher] Successfully patched Antigravity app.asar!\n",
+                    stderr="",
+                )
+                wd.check_and_patch()
+
+                self.assertEqual(mock_run.call_count, 2)
+                self.assertEqual(wd.last_asar_mtime, expected_mtime)
+                mock_notify.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

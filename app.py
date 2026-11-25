@@ -348,6 +348,20 @@ class AntigravityAsarWatchdog(threading.Thread):
         self.running = True
         self.last_asar_mtime = None
         self.last_live_patch_attempt = 0.0
+        self._missing_script_logged = False
+
+    def _resolve_patch_script(self):
+        """Return the first existing auto_patch_antigravity.js path or None."""
+        candidates = [self.patch_script]
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(os.path.join(meipass, "scripts", "auto_patch_antigravity.js"))
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "_internal", "scripts", "auto_patch_antigravity.js"))
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "auto_patch_antigravity.js"))
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        return None
 
     def _notify_restart_needed(self):
         try:
@@ -373,41 +387,41 @@ class AntigravityAsarWatchdog(threading.Thread):
             time.sleep(self.check_interval_sec)
 
     def check_and_patch(self):
-        if not os.path.exists(self.asar_path) or not os.path.exists(self.patch_script):
+        if not os.path.exists(self.asar_path):
             return
+        script_path = self._resolve_patch_script()
+        if script_path is None:
+            if not self._missing_script_logged:
+                log_msg("[AsarWatchdog] Patch script not found in install dir or bundled fallback; skipping patch.")
+                self._missing_script_logged = True
+            return
+        self._missing_script_logged = False
         try:
             mtime = os.path.getmtime(self.asar_path)
-            if self.last_asar_mtime is None:
-                self.last_asar_mtime = mtime
-                cmd = ["node", self.patch_script]
-                creationflags = 0x08000000 if os.name == 'nt' else 0
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
-                if res.returncode == 0:
-                    out = res.stdout.strip()
-                    log_msg(f"[AsarWatchdog] Initial asar check: {out}")
-                    if os.path.exists(self.asar_path):
-                        self.last_asar_mtime = os.path.getmtime(self.asar_path)
+            if self.last_asar_mtime is not None and mtime == self.last_asar_mtime:
                 return
-            if mtime != self.last_asar_mtime:
-                self.last_asar_mtime = mtime
-                now = time.time()
-                if now - self.last_live_patch_attempt < 15.0:
-                    return
-                self.last_live_patch_attempt = now
+            now = time.time()
+            if self.last_live_patch_attempt > 0 and (now - self.last_live_patch_attempt) < 15.0:
+                return
+            self.last_live_patch_attempt = now
 
+            is_initial = self.last_asar_mtime is None
+            if not is_initial:
                 log_msg("[AsarWatchdog] Antigravity update detected (app.asar mtime changed)! Applying quota extension...")
-                cmd = ["node", self.patch_script]
-                creationflags = 0x08000000 if os.name == 'nt' else 0
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
-                if res.returncode == 0:
-                    out = res.stdout.strip()
-                    log_msg(f"[AsarWatchdog] Quota extension applied cleanly: {out}")
-                    if os.path.exists(self.asar_path):
-                        self.last_asar_mtime = os.path.getmtime(self.asar_path)
-                    if "Successfully patched Antigravity app.asar!" in out and "Successfully ensured draggable titlebar" not in out:
-                        self._notify_restart_needed()
-                else:
-                    log_msg(f"[AsarWatchdog] Patch script error ({res.returncode}): {res.stderr}")
+
+            cmd = ["node", script_path]
+            creationflags = 0x08000000 if os.name == 'nt' else 0
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
+            if res.returncode == 0:
+                out = res.stdout.strip()
+                prefix = "[AsarWatchdog] Initial asar check:" if is_initial else "[AsarWatchdog] Quota extension applied cleanly:"
+                log_msg(f"{prefix} {out}")
+                self.last_asar_mtime = os.path.getmtime(self.asar_path) if os.path.exists(self.asar_path) else mtime
+                if "Successfully patched Antigravity app.asar!" in out and "Successfully ensured draggable titlebar" not in out:
+                    self._notify_restart_needed()
+            else:
+                err = (res.stderr or res.stdout or "").strip()
+                log_msg(f"[AsarWatchdog] Patch script error ({res.returncode}): {err}")
         except Exception as e:
             log_msg(f"[AsarWatchdog] Verification error: {e}")
 

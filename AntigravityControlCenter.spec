@@ -7,7 +7,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('app_icon.ico', '.'), ('static', 'static'), (certifi.where(), '.')],
+    datas=[('app_icon.ico', '.'), ('static', 'static'), ('scripts/auto_patch_antigravity.js', 'scripts'), (certifi.where(), '.')],
     hiddenimports=['PyQt5.QtWebEngineWidgets', 'PyQt5.QtWebEngineCore', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui'],
     hookspath=[],
     hooksconfig={},
