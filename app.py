@@ -349,6 +349,7 @@ class AntigravityAsarWatchdog(threading.Thread):
         self.last_asar_mtime = None
         self.last_live_patch_attempt = 0.0
         self._missing_script_logged = False
+        self._missing_node_logged = False
 
     def _resolve_patch_script(self):
         """Return the first existing auto_patch_antigravity.js path or None."""
@@ -360,6 +361,21 @@ class AntigravityAsarWatchdog(threading.Thread):
         candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "auto_patch_antigravity.js"))
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _resolve_node_exe(self):
+        """Return the first usable Node.js executable path or None."""
+        which_node = shutil.which("node")
+        if which_node:
+            return which_node
+        candidates = [
+            os.path.expandvars(r"%ProgramFiles%\nodejs\node.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\nodejs\node.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\nodejs\node.exe"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
                 return candidate
         return None
 
@@ -396,6 +412,13 @@ class AntigravityAsarWatchdog(threading.Thread):
                 self._missing_script_logged = True
             return
         self._missing_script_logged = False
+        node_exe = self._resolve_node_exe()
+        if node_exe is None:
+            if not self._missing_node_logged:
+                log_msg("[AsarWatchdog] Node.js executable not found on PATH or standard install locations; skipping patch.")
+                self._missing_node_logged = True
+            return
+        self._missing_node_logged = False
         try:
             mtime = os.path.getmtime(self.asar_path)
             if self.last_asar_mtime is not None and mtime == self.last_asar_mtime:
@@ -409,7 +432,7 @@ class AntigravityAsarWatchdog(threading.Thread):
             if not is_initial:
                 log_msg("[AsarWatchdog] Antigravity update detected (app.asar mtime changed)! Applying quota extension...")
 
-            cmd = ["node", script_path]
+            cmd = [node_exe, script_path]
             creationflags = 0x08000000 if os.name == 'nt' else 0
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=creationflags)
             if res.returncode == 0:

@@ -52,9 +52,10 @@ try {
         $ScriptsSrcDir = Join-Path $RepoRoot "scripts"
         foreach ($ScriptName in $CompanionScripts) {
             $SrcPath = Join-Path $ScriptsSrcDir $ScriptName
-            if (Test-Path $SrcPath) {
-                Copy-Item -Path $SrcPath -Destination (Join-Path $InstallDir $ScriptName) -Force
+            if (-not (Test-Path $SrcPath)) {
+                throw "Missing companion script: $SrcPath"
             }
+            Copy-Item -Path $SrcPath -Destination (Join-Path $InstallDir $ScriptName) -Force
         }
     }
     # 1. Read APP_VERSION from version.py
@@ -100,23 +101,7 @@ try {
         }
     }
 
-    # 3. Run automated guardrail unit tests
-    if (-not $SkipTests) {
-        Write-Host "[Release] Running guardrail unit tests..." -ForegroundColor Cyan
-        $PrevPythonPath = $env:PYTHONPATH
-        try {
-            $env:PYTHONPATH = ".;tests"
-            python -m unittest test_release -v
-            if ($LASTEXITCODE -ne 0) {
-                throw "Unit tests failed with exit code $LASTEXITCODE"
-            }
-        }
-        finally {
-            $env:PYTHONPATH = $PrevPythonPath
-        }
-    }
-
-    # 3b. Fast Path A: Static/script-only local sync (skips PyInstaller and Inno Setup)
+    # 3. Fast Path A: Static/script-only local sync (skips PyInstaller and Inno Setup)
     if ($InstallLocal -and $StaticOnly -and (-not $Publish) -and (Test-Path $InstalledExe)) {
         Write-Host "[Release] Fast-syncing static assets and companion scripts to $InstallDir..." -ForegroundColor Cyan
         Stop-InstalledApp
@@ -139,6 +124,22 @@ try {
         return
     }
 
+    # 3b. Pre-build unit test gate (runs for full release builds and -InstallLocal non-StaticOnly builds)
+    if (-not $SkipTests) {
+        Write-Host "[Release] Running full unit test suite..." -ForegroundColor Cyan
+        $PrevPythonPath = $env:PYTHONPATH
+        try {
+            $env:PYTHONPATH = ".;tests"
+            python -m unittest discover -s .\tests -v
+            if ($LASTEXITCODE -ne 0) {
+                throw "Unit tests failed with exit code $LASTEXITCODE"
+            }
+        }
+        finally {
+            $env:PYTHONPATH = $PrevPythonPath
+        }
+    }
+
     # 4. Build PyInstaller bundle and verify critical artifacts
     $DistAppDir = Join-Path $RepoRoot "dist\AntigravityControlCenter"
     if (-not $SkipBuild) {
@@ -158,6 +159,7 @@ try {
         (Join-Path $DistAppDir "_internal\_ssl.pyd"),
         (Join-Path $DistAppDir "_ssl.pyd")
     )
+    $BundledPatcher = Join-Path $DistAppDir "_internal\scripts\auto_patch_antigravity.js"
 
     if (-not (Test-Path $BuiltExe)) {
         throw "Missing PyInstaller output: $BuiltExe"
@@ -168,7 +170,10 @@ try {
     if (-not ($SslPydCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)) {
         throw "Missing bundled _ssl.pyd in $DistAppDir (required for HTTPS updater)"
     }
-    Write-Host "[Release] Verified PyInstaller bundle (exe, static\index.html, _ssl.pyd)" -ForegroundColor Green
+    if (-not (Test-Path $BundledPatcher)) {
+        throw "Missing bundled _internal\scripts\auto_patch_antigravity.js in $DistAppDir"
+    }
+    Write-Host "[Release] Verified PyInstaller bundle (exe, static\index.html, _ssl.pyd, _internal\scripts\auto_patch_antigravity.js)" -ForegroundColor Green
 
     # 4b. Fast Path B: Local mirror sync without Inno Setup
     if ($InstallLocal -and (-not $StaticOnly) -and (-not $Publish) -and (Test-Path $InstalledExe)) {

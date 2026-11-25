@@ -66,6 +66,7 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
             with mock.patch.object(sys, "_MEIPASS", None, create=True), \
                  mock.patch.object(sys, "executable", str(fake_exe)), \
                  mock.patch.object(app, "__file__", str(fake_app_file)), \
+                 mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
                  mock.patch.object(app, "log_msg") as mock_log, \
                  mock.patch("app.subprocess.run") as mock_run:
                 wd.check_and_patch()
@@ -99,6 +100,62 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
                 missing_calls = [c for c in mock_log.call_args_list if c.args[0] == missing_msg]
                 self.assertEqual(len(missing_calls), 2)
 
+    def test_resolve_node_exe_prefers_which_and_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            pf_node = os.path.expandvars(r"%ProgramFiles%\nodejs\node.exe")
+
+            with mock.patch("app.shutil.which", return_value=r"C:\custom\node.exe"):
+                self.assertEqual(wd._resolve_node_exe(), r"C:\custom\node.exe")
+
+            with mock.patch("app.shutil.which", return_value=None), \
+                 mock.patch("app.os.path.isfile", side_effect=lambda p: p == pf_node):
+                self.assertEqual(wd._resolve_node_exe(), pf_node)
+
+            with mock.patch("app.shutil.which", return_value=None), \
+                 mock.patch("app.os.path.isfile", return_value=False):
+                self.assertIsNone(wd._resolve_node_exe())
+
+    def test_missing_node_logs_once_and_resets_when_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            Path(wd.asar_path).write_bytes(b"asar")
+            script_file = Path(wd.patch_script)
+            script_file.parent.mkdir(parents=True, exist_ok=True)
+            script_file.write_text("// patcher", encoding="utf-8")
+
+            node_path = [None]
+            with mock.patch.object(wd, "_resolve_node_exe", side_effect=lambda: node_path[0]), \
+                 mock.patch.object(app, "log_msg") as mock_log, \
+                 mock.patch("app.subprocess.run") as mock_run:
+                wd.check_and_patch()
+                wd.check_and_patch()
+                wd.check_and_patch()
+
+                missing_msg = "[AsarWatchdog] Node.js executable not found on PATH or standard install locations; skipping patch."
+                missing_calls = [c for c in mock_log.call_args_list if c.args[0] == missing_msg]
+                self.assertEqual(len(missing_calls), 1)
+                self.assertTrue(wd._missing_node_logged)
+                self.assertIsNone(wd.last_asar_mtime)
+                mock_run.assert_not_called()
+
+                node_path[0] = r"C:\Program Files\nodejs\node.exe"
+                mock_run.return_value = mock.Mock(
+                    returncode=0,
+                    stdout="[AutoPatcher] Already patched. Nothing to do.\n",
+                    stderr="",
+                )
+                wd.check_and_patch()
+
+                self.assertFalse(wd._missing_node_logged)
+                mock_run.assert_called_once()
+                self.assertEqual(
+                    mock_run.call_args.args[0],
+                    [r"C:\Program Files\nodejs\node.exe", str(script_file)],
+                )
+
     def test_initial_disk_patch_updates_mtime_and_notifies(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -111,7 +168,8 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
 
             expected_mtime = os.path.getmtime(wd.asar_path)
 
-            with mock.patch.object(app, "log_msg") as mock_log, \
+            with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch.object(app, "log_msg") as mock_log, \
                  mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
                  mock.patch("app.subprocess.run") as mock_run:
                 mock_run.return_value = mock.Mock(
@@ -147,7 +205,8 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
             expected_mtime = os.path.getmtime(wd.asar_path)
             current_time = [1000.0]
 
-            with mock.patch.object(app, "log_msg") as mock_log, \
+            with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch.object(app, "log_msg") as mock_log, \
                  mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
                  mock.patch("app.time.time", side_effect=lambda: current_time[0]), \
                  mock.patch("app.subprocess.run") as mock_run:

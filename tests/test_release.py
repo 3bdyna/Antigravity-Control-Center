@@ -217,6 +217,39 @@ class TestInstallerAndPrivacyGuardrails(unittest.TestCase):
                     offenders.append(f"{path.relative_to(REPO_ROOT)} contains {token!r}")
         self.assertEqual(offenders, [], "Hardcoded personal paths found: " + "; ".join(offenders))
 
+    def test_companion_scripts_and_spec_bundle_parity(self):
+        spec_path = REPO_ROOT / "AntigravityControlCenter.spec"
+        build_script_path = REPO_ROOT / "scripts" / "build_release.ps1"
+        spec_text = spec_path.read_text(encoding="utf-8")
+        build_text = build_script_path.read_text(encoding="utf-8")
+        iss_text = ISS_PATH.read_text(encoding="utf-8")
+
+        self.assertRegex(
+            spec_text,
+            r"""\(\s*['"]scripts/auto_patch_antigravity\.js['"]\s*,\s*['"]scripts['"]\s*\)""",
+            "AntigravityControlCenter.spec must bundle scripts/auto_patch_antigravity.js into scripts",
+        )
+
+        companion_match = re.search(r"\$CompanionScripts\s*=\s*@\((.*?)\)", build_text, re.DOTALL)
+        self.assertIsNotNone(companion_match, "$CompanionScripts block not found in scripts/build_release.ps1")
+        companion_scripts = re.findall(r"""['"]([^'"]+)['"]""", companion_match.group(1))
+        self.assertGreater(len(companion_scripts), 0, "$CompanionScripts list must not be empty")
+
+        files_section_match = re.search(r"\[Files\](.*?)(?:\n\[[A-Za-z0-9_]+\]|\Z)", iss_text, re.DOTALL)
+        self.assertIsNotNone(files_section_match, "[Files] section not found in AntigravityControlCenter.iss")
+        files_section = files_section_match.group(1)
+
+        for script_name in companion_scripts:
+            self.assertTrue(
+                (REPO_ROOT / "scripts" / script_name).is_file(),
+                f"Companion script missing from scripts/: {script_name}",
+            )
+            self.assertRegex(
+                files_section,
+                rf'Source:\s*"\.\.\\scripts\\{re.escape(script_name)}"',
+                f"Companion script missing from installer [Files]: {script_name}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
