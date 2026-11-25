@@ -63,7 +63,7 @@ const COMBINED_SCRIPT = `
 
 // --- Antigravity Active Account Quota Top-Bar Indicator ---
 (function initAntigravityQuotaIndicator() {
-    const UI_VERSION = 'ag-swiss-ui-v1';
+    const UI_VERSION = 'ag-swiss-ui-v2';
     const existingPill = document.getElementById('ag-quota-pill');
     if (existingPill && existingPill.dataset.uiVersion === UI_VERSION) return;
     window.__agQuotaIndicatorRunning = true;
@@ -160,10 +160,9 @@ const COMBINED_SCRIPT = `
                 display: inline-flex;
                 align-items: center;
                 gap: 4px;
-                background: #131311;
-                padding: 1px 5px;
-                border-radius: 2px;
-                border: 1px solid #2b2a27;
+                background: transparent;
+                border: none;
+                padding: 0;
                 font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
                 font-variant-numeric: tabular-nums;
             }
@@ -172,72 +171,63 @@ const COMBINED_SCRIPT = `
                 align-items: center;
                 gap: 3px;
                 background: transparent;
-                padding: 1px 4px;
-                border-radius: 2px;
-                border: 1px solid #2b2a27;
+                border: none;
+                padding: 0 0 0 4px;
                 font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
                 font-variant-numeric: tabular-nums;
+                opacity: 0.78;
             }
             #ag-btn-control-center {
                 display: inline-flex;
                 align-items: center;
                 gap: 4px;
-                background: #22221f;
-                border: 1px solid #403e39;
-                border-radius: 2px;
-                color: #f2f0ea;
-                font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
-                font-size: 9.5px;
-                font-weight: 600;
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-                height: 18px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid transparent;
+                border-radius: 4px;
+                color: #a8a59c;
+                font-family: inherit;
+                font-size: 10.5px;
+                font-weight: 500;
+                letter-spacing: 0.01em;
+                text-transform: none;
+                height: 16px;
                 padding: 0 6px;
                 cursor: pointer;
                 -webkit-app-region: no-drag;
                 pointer-events: auto;
                 outline: none;
-                transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+                transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
             }
             #ag-btn-control-center:hover {
-                background: #2c2b27 !important;
-                border-color: #e55333 !important;
-                color: #ffffff !important;
+                background: rgba(255, 255, 255, 0.09) !important;
+                border-color: rgba(229, 83, 51, 0.55) !important;
+                color: #f2f0ea !important;
             }
-            @media (max-width: 1200px) {
+            #ag-btn-control-center:hover svg {
+                color: #e55333;
+            }
+            @media (max-width: 1020px) {
                 #ag-quota-pill {
-                    left: auto !important;
-                    right: 140px !important;
+                    left: 260px !important;
+                    right: 142px !important;
+                    width: fit-content !important;
+                    margin: 0 auto !important;
                     transform: none !important;
+                    max-width: calc(100vw - 410px) !important;
                 }
             }
-            @media (max-width: 950px) {
-                .ag-btn-text { display: none !important; }
-                .ag-acct-text { max-width: 70px !important; }
-                #ag-quota-pill {
-                    left: auto !important;
-                    right: 140px !important;
-                    transform: none !important;
-                    gap: 5px !important;
-                    padding: 0 6px 0 8px !important;
-                }
-            }
-            @media (max-width: 820px) {
-                #ag-quota-pill {
-                    left: auto !important;
-                    right: 140px !important;
-                    transform: none !important;
-                    gap: 4px !important;
-                    padding: 0 5px 0 6px !important;
-                }
+            @media (max-width: 900px) {
                 .ag-badge-wk { display: none !important; }
             }
+            @media (max-width: 740px) {
+                .ag-btn-text { display: none !important; }
+                .ag-acct-text { max-width: 64px !important; }
+            }
             @media (max-width: 600px) {
+                .ag-acct-text { display: none !important; }
                 #ag-quota-pill {
-                    right: 135px !important;
-                    gap: 3px !important;
+                    gap: 5px !important;
                 }
-                .ag-acct-text { max-width: 50px !important; }
             }
         \`;
     }
@@ -258,24 +248,23 @@ const COMBINED_SCRIPT = `
         if (el.dataset.uiVersion !== UI_VERSION) {
             el.style.cssText = [
                 'position: fixed',
-                'top: 4px',
+                'top: 5px',
                 'left: 50%',
                 'transform: translateX(-50%)',
-                'height: 24px',
+                'height: 22px',
                 'z-index: 99999',
                 'user-select: none',
                 'display: inline-flex',
                 'align-items: center',
-                'gap: 7px',
+                'gap: 8px',
                 'padding: 0 4px 0 8px',
-                'border-radius: 3px',
-                'background: #191917',
-                'border: 1px solid #2b2a27',
-                'color: #f2f0ea',
+                'border-radius: 5px',
+                'background: rgba(255, 255, 255, 0.03)',
+                'border: 1px solid rgba(255, 255, 255, 0.07)',
+                'color: #a8a59c',
                 'font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
                 'font-size: 11px',
                 'line-height: 1',
-                'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45)',
                 'cursor: pointer',
                 'transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease',
                 'box-sizing: border-box',
@@ -287,13 +276,13 @@ const COMBINED_SCRIPT = `
         if (!el.dataset.listenersBound) {
             el.dataset.listenersBound = 'true';
             el.addEventListener('mouseenter', () => {
-                el.style.background = '#22221f';
-                el.style.borderColor = '#403e39';
+                el.style.background = 'rgba(255, 255, 255, 0.06)';
+                el.style.borderColor = 'rgba(255, 255, 255, 0.13)';
             });
 
             el.addEventListener('mouseleave', () => {
-                el.style.background = '#191917';
-                el.style.borderColor = '#2b2a27';
+                el.style.background = 'rgba(255, 255, 255, 0.03)';
+                el.style.borderColor = 'rgba(255, 255, 255, 0.07)';
             });
 
             el.addEventListener('click', (e) => {
@@ -341,13 +330,13 @@ const COMBINED_SCRIPT = `
                 '<button id="ag-btn-control-center" title="Click to open Antigravity Control Center">',
                 '  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" style="flex-shrink:0;">',
                 '    <line x1="2" y1="4" x2="14" y2="4"></line>',
-                '    <circle cx="5.5" cy="4" r="1.5" fill="#e55333" stroke="#e55333"></circle>',
+                '    <circle cx="5.5" cy="4" r="1.5" fill="none"></circle>',
                 '    <line x1="2" y1="8" x2="14" y2="8"></line>',
-                '    <circle cx="10.5" cy="8" r="1.5" fill="#191917"></circle>',
+                '    <circle cx="10.5" cy="8" r="1.5" fill="none"></circle>',
                 '    <line x1="2" y1="12" x2="14" y2="12"></line>',
-                '    <circle cx="6.5" cy="12" r="1.5" fill="#191917"></circle>',
+                '    <circle cx="6.5" cy="12" r="1.5" fill="none"></circle>',
                 '  </svg>',
-                '  <span class="ag-btn-text">CONTROL</span>',
+                '  <span class="ag-btn-text">Control</span>',
                 '</button>'
             ].join('');
 
@@ -358,8 +347,8 @@ const COMBINED_SCRIPT = `
                 pill.dataset.renderedUiVersion = UI_VERSION;
                 pill.innerHTML = [
                     '<span style="width:5px;height:5px;border-radius:50%;background:#d9a043;flex-shrink:0;display:inline-block;"></span>',
-                    '<span style="color:#a8a59c;font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;">Syncing</span>',
-                    '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+                    '<span style="color:#a8a59c;font-size:10.5px;font-weight:400;">Syncing</span>',
+                    '<span style="width:1px;height:10px;background:rgba(255,255,255,0.10);"></span>',
                     controlBtnHtml
                 ].join('');
                 pill.title = 'Antigravity Quota: Waiting for switchboard status...\\nClick [Control] to open Control Center';
@@ -428,39 +417,39 @@ const COMBINED_SCRIPT = `
                 // Account Badge
                 '<span style="display:inline-flex;align-items:center;gap:5px;">',
                 '  <span style="width:5px;height:5px;border-radius:50%;background:#52c47e;flex-shrink:0;display:inline-block;"></span>',
-                '  <span class="ag-acct-text" style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;color:#f2f0ea;font-weight:500;">' + shortName + '</span>',
+                '  <span class="ag-acct-text" style="max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;color:#d6d3cb;font-weight:400;">' + shortName + '</span>',
                 '</span>',
-                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+                '<span style="width:1px;height:10px;background:rgba(255,255,255,0.10);"></span>',
 
                 // Gemini Segment
                 '<div style="display:inline-flex;align-items:center;gap:5px;">',
-                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:700;color:#a8a59c;">G</span>',
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:600;color:#76736b;">G</span>',
                 '  <span class="ag-badge-5h" title="Gemini 5h cycle remaining">',
-                '    <span style="font-weight:600;color:' + gColor + ';font-size:10.5px;">' + gVal + '</span>',
+                '    <span style="font-weight:500;color:' + gColor + ';font-size:10.5px;">' + gVal + '</span>',
                 '    <span style="color:#76736b;font-size:9.5px;">' + (gemini5hDelta || '--') + '</span>',
                 '  </span>',
                 '  <span class="ag-badge-wk" title="Gemini Weekly quota remaining">',
-                '    <span style="color:#76736b;font-size:9px;font-weight:600;">W</span>',
+                '    <span style="color:#6b6860;font-size:9px;">W</span>',
                 '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + gWVal + '</span>',
-                '    <span style="color:#76736b;font-size:9px;">' + (geminiWeeklyDelta || '--') + '</span>',
+                '    <span style="color:#6b6860;font-size:9px;">' + (geminiWeeklyDelta || '--') + '</span>',
                 '  </span>',
                 '</div>',
-                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+                '<span style="width:1px;height:10px;background:rgba(255,255,255,0.10);"></span>',
 
                 // Claude Segment
                 '<div style="display:inline-flex;align-items:center;gap:5px;">',
-                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:700;color:#a8a59c;">C</span>',
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:600;color:#76736b;">C</span>',
                 '  <span class="ag-badge-5h" title="Claude 5h cycle remaining">',
-                '    <span style="font-weight:600;color:' + cColor + ';font-size:10.5px;">' + cVal + '</span>',
+                '    <span style="font-weight:500;color:' + cColor + ';font-size:10.5px;">' + cVal + '</span>',
                 '    <span style="color:#76736b;font-size:9.5px;">' + (claude5hDelta || '--') + '</span>',
                 '  </span>',
                 '  <span class="ag-badge-wk" title="Claude Weekly quota remaining">',
-                '    <span style="color:#76736b;font-size:9px;font-weight:600;">W</span>',
+                '    <span style="color:#6b6860;font-size:9px;">W</span>',
                 '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + cWVal + '</span>',
-                '    <span style="color:#76736b;font-size:9px;">' + (claudeWeeklyDelta || '--') + '</span>',
+                '    <span style="color:#6b6860;font-size:9px;">' + (claudeWeeklyDelta || '--') + '</span>',
                 '  </span>',
                 '</div>',
-                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+                '<span style="width:1px;height:10px;background:rgba(255,255,255,0.10);"></span>',
 
                 // Control Center Button
                 controlBtnHtml
