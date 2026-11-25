@@ -5,7 +5,6 @@
 [![Download Latest Windows Installer (.exe)](https://img.shields.io/badge/Download-Latest%20Windows%20Installer%20(.exe)-2ea44f?style=for-the-badge&logo=windows)](https://github.com/3bdyna/Antigravity-Control-Center/releases/latest)
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=flat-square)
-![Version](https://img.shields.io/badge/Version-v1.4.1-2ea44f?style=flat-square)
 ![Stack](https://img.shields.io/badge/Stack-Python%20%7C%20PyQt5%20%7C%20WebEngine-3776AB?style=flat-square)
 ![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20DPAPI-4479A1?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
