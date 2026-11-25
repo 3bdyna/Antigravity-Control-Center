@@ -29,6 +29,7 @@ function isAlreadyPatched() {
         return buf.includes(Buffer.from(MARKER)) &&
                buf.includes(Buffer.from('lastValidStatus')) &&
                buf.includes(Buffer.from('control-center:ensure-daemon')) &&
+               buf.includes(Buffer.from('ag-swiss-ui-v1')) &&
                !buf.includes(Buffer.from("'http://127.0.0.1:28795/'"));
 
     } catch (e) {
@@ -53,17 +54,18 @@ const PRELOAD_INJECTION = `
 // --- Antigravity Active Account Quota Top-Bar Indicator ---
 
 (function initAntigravityQuotaIndicator() {
+    const UI_VERSION = 'ag-swiss-ui-v1';
     window.__agQuotaIndicatorRunning = true;
 
-    function getDotColor(pct) {
+    function quotaColor(val) {
 
-        if (pct === null || pct === undefined || isNaN(pct)) return '#94a3b8';
+        if (val === null || val === undefined || isNaN(val)) return '#f2f0ea';
 
-        if (pct >= 50) return '#22c55e';
+        if (val >= 50) return '#52c47e';
 
-        if (pct >= 20) return '#f59e0b';
+        if (val >= 20) return '#d9a043';
 
-        return '#ef4444';
+        return '#e55333';
 
     }
 
@@ -121,11 +123,23 @@ const PRELOAD_INJECTION = `
 
     function ensureStyles() {
 
-        if (document.getElementById('ag-quota-styles')) return;
+        let style = document.getElementById('ag-quota-styles');
 
-        const style = document.createElement('style');
+        if (style && style.dataset.uiVersion === UI_VERSION) return;
 
-        style.id = 'ag-quota-styles';
+        if (!style) {
+
+            style = document.createElement('style');
+
+            style.id = 'ag-quota-styles';
+
+            const target = document.head || document.documentElement;
+
+            if (target) target.appendChild(style);
+
+        }
+
+        style.dataset.uiVersion = UI_VERSION;
 
         style.textContent = \`
 
@@ -185,15 +199,19 @@ const PRELOAD_INJECTION = `
 
                 align-items: center;
 
-                gap: 3px;
+                gap: 4px;
 
-                background: rgba(255, 255, 255, 0.08);
+                background: #131311;
 
                 padding: 1px 5px;
 
-                border-radius: 4px;
+                border-radius: 2px;
 
-                border: 1px solid rgba(255, 255, 255, 0.08);
+                border: 1px solid #2b2a27;
+
+                font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+
+                font-variant-numeric: tabular-nums;
 
             }
 
@@ -205,13 +223,69 @@ const PRELOAD_INJECTION = `
 
                 gap: 3px;
 
-                background: rgba(255, 255, 255, 0.04);
+                background: transparent;
 
-                padding: 1px 5px;
+                padding: 1px 4px;
 
-                border-radius: 4px;
+                border-radius: 2px;
 
-                border: 1px solid rgba(255, 255, 255, 0.06);
+                border: 1px solid #2b2a27;
+
+                font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+
+                font-variant-numeric: tabular-nums;
+
+            }
+
+            #ag-btn-control-center {
+
+                display: inline-flex;
+
+                align-items: center;
+
+                gap: 4px;
+
+                background: #22221f;
+
+                border: 1px solid #403e39;
+
+                border-radius: 2px;
+
+                color: #f2f0ea;
+
+                font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+
+                font-size: 9.5px;
+
+                font-weight: 600;
+
+                letter-spacing: 0.05em;
+
+                text-transform: uppercase;
+
+                height: 18px;
+
+                padding: 0 6px;
+
+                cursor: pointer;
+
+                -webkit-app-region: no-drag;
+
+                pointer-events: auto;
+
+                outline: none;
+
+                transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+            }
+
+            #ag-btn-control-center:hover {
+
+                background: #2c2b27 !important;
+
+                border-color: #e55333 !important;
+
+                color: #ffffff !important;
 
             }
 
@@ -287,10 +361,6 @@ const PRELOAD_INJECTION = `
 
         \`;
 
-        const target = document.head || document.documentElement;
-
-        if (target) target.appendChild(style);
-
     }
 
 
@@ -301,15 +371,13 @@ const PRELOAD_INJECTION = `
 
         let el = document.getElementById('ag-quota-pill');
 
-        if (el && document.body && document.body.contains(el)) {
+        if (!document.body) return null;
+
+        if (el && document.body.contains(el) && el.dataset.uiVersion === UI_VERSION) {
 
             return el;
 
         }
-
-        if (!document.body) return null;
-
-
 
         if (!el) {
 
@@ -317,7 +385,9 @@ const PRELOAD_INJECTION = `
 
             el.id = 'ag-quota-pill';
 
-            // Centered in top bar: left 50% with translateX(-50%)
+        }
+
+        if (el.dataset.uiVersion !== UI_VERSION) {
 
             el.style.cssText = [
 
@@ -341,27 +411,23 @@ const PRELOAD_INJECTION = `
 
                 'gap: 7px',
 
-                'padding: 0 8px 0 10px',
+                'padding: 0 4px 0 8px',
 
-                'border-radius: 12px',
+                'border-radius: 3px',
 
-                'background: rgba(30, 32, 38, 0.94)',
+                'background: #191917',
 
-                'backdrop-filter: blur(8px)',
+                'border: 1px solid #2b2a27',
 
-                '-webkit-backdrop-filter: blur(8px)',
+                'color: #f2f0ea',
 
-                'border: 1px solid rgba(255, 255, 255, 0.15)',
+                'font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
 
-                'color: #f1f5f9',
-
-                'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-
-                'font-size: 11.5px',
+                'font-size: 11px',
 
                 'line-height: 1',
 
-                'box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35)',
+                'box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45)',
 
                 'cursor: pointer',
 
@@ -373,27 +439,29 @@ const PRELOAD_INJECTION = `
 
             ].join(';') + ';';
 
+            el.dataset.uiVersion = UI_VERSION;
 
+        }
+
+        if (!el.dataset.listenersBound) {
+
+            el.dataset.listenersBound = 'true';
 
             el.addEventListener('mouseenter', () => {
 
-                el.style.background = 'rgba(45, 48, 56, 0.98)';
+                el.style.background = '#22221f';
 
-                el.style.borderColor = 'rgba(255, 255, 255, 0.28)';
+                el.style.borderColor = '#403e39';
 
             });
-
-
 
             el.addEventListener('mouseleave', () => {
 
-                el.style.background = 'rgba(30, 32, 38, 0.94)';
+                el.style.background = '#191917';
 
-                el.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                el.style.borderColor = '#2b2a27';
 
             });
-
-
 
             el.addEventListener('click', (e) => {
 
@@ -402,8 +470,6 @@ const PRELOAD_INJECTION = `
             });
 
         }
-
-
 
         if (!document.body.contains(el)) {
 
@@ -461,21 +527,38 @@ const PRELOAD_INJECTION = `
             const pill = ensurePillElement();
             if (!pill) return;
 
+            const controlBtnHtml = [
+                '<button id="ag-btn-control-center" title="Click to open Antigravity Control Center">',
+                '  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" style="flex-shrink:0;">',
+                '    <line x1="2" y1="4" x2="14" y2="4"></line>',
+                '    <circle cx="5.5" cy="4" r="1.5" fill="#e55333" stroke="#e55333"></circle>',
+                '    <line x1="2" y1="8" x2="14" y2="8"></line>',
+                '    <circle cx="10.5" cy="8" r="1.5" fill="#191917"></circle>',
+                '    <line x1="2" y1="12" x2="14" y2="12"></line>',
+                '    <circle cx="6.5" cy="12" r="1.5" fill="#191917"></circle>',
+                '  </svg>',
+                '  <span class="ag-btn-text">CONTROL</span>',
+                '</button>'
+            ].join('');
+
             if (!status || !status.active) {
-                if (pill.dataset.hasRendered === 'true') {
+                if (pill.dataset.hasRendered === 'true' && pill.dataset.renderedUiVersion === UI_VERSION) {
                     return;
                 }
+                pill.dataset.renderedUiVersion = UI_VERSION;
                 pill.innerHTML = [
-                    '<span style="color:#94a3b8;font-size:11px;">⚡ Quota Syncing...</span>',
-                    '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
-                    '<button id="ag-btn-control-center" style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);border-radius:6px;color:#f8fafc;font-family:inherit;font-size:10.5px;font-weight:600;padding:1px 7px;height:18px;cursor:pointer;-webkit-app-region:no-drag;pointer-events:auto;outline:none;">⚙️ <span class="ag-btn-text">Control</span></button>'
+                    '<span style="width:5px;height:5px;border-radius:50%;background:#d9a043;flex-shrink:0;display:inline-block;"></span>',
+                    '<span style="color:#a8a59c;font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;">Syncing</span>',
+                    '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+                    controlBtnHtml
                 ].join('');
-                pill.title = 'Antigravity Quota: Waiting for switchboard status...\\nClick button to open Control Center';
+                pill.title = 'Antigravity Quota: Waiting for switchboard status...\\nClick [Control] to open Control Center';
                 attachButtonHandler();
                 return;
             }
 
             pill.dataset.hasRendered = 'true';
+            pill.dataset.renderedUiVersion = UI_VERSION;
 
 
 
@@ -571,15 +654,9 @@ const PRELOAD_INJECTION = `
 
 
 
-            const gMin = Math.min(gemini5h ?? 100, geminiWeekly ?? 100);
+            const gColor = quotaColor(gemini5h);
 
-            const cMin = Math.min(claude5h ?? 100, claudeWeekly ?? 100);
-
-
-
-            const gColor = getDotColor(gMin);
-
-            const cColor = getDotColor(cMin);
+            const cColor = quotaColor(claude5h);
 
 
 
@@ -599,63 +676,81 @@ const PRELOAD_INJECTION = `
 
                 // Account Badge
 
-                '<span style="display:inline-flex;align-items:center;gap:4px;color:#cbd5e1;font-weight:600;">',
+                '<span style="display:inline-flex;align-items:center;gap:5px;">',
 
-                '  <span style="font-size:11px;opacity:0.85;">👤</span>',
+                '  <span style="width:5px;height:5px;border-radius:50%;background:#52c47e;flex-shrink:0;display:inline-block;"></span>',
 
-                '  <span class="ag-acct-text" style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;">' + shortName + '</span>',
+                '  <span class="ag-acct-text" style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;color:#f2f0ea;font-weight:500;">' + shortName + '</span>',
 
                 '</span>',
 
-                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
 
 
 
                 // Gemini Segment
+
                 '<div style="display:inline-flex;align-items:center;gap:5px;">',
-                '  <span style="font-weight:700;color:#ffffff;font-size:11px;">G</span>',
+
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:700;color:#a8a59c;">G</span>',
+
                 '  <span class="ag-badge-5h" title="Gemini 5h cycle remaining">',
-                '    <span style="font-weight:700;color:#f8fafc;font-size:11px;">' + gVal + '</span>',
-                '    <span style="color:#94a3b8;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (gemini5hDelta || '--') + '</span>',
+
+                '    <span style="font-weight:600;color:' + gColor + ';font-size:10.5px;">' + gVal + '</span>',
+
+                '    <span style="color:#76736b;font-size:9.5px;">' + (gemini5hDelta || '--') + '</span>',
+
                 '  </span>',
+
                 '  <span class="ag-badge-wk" title="Gemini Weekly quota remaining">',
-                '    <span style="color:#64748b;font-size:9px;font-weight:700;">W</span>',
-                '    <span style="font-weight:600;color:#cbd5e1;font-size:11px;">' + gWVal + '</span>',
-                '    <span style="color:#64748b;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (geminiWeeklyDelta || '--') + '</span>',
+
+                '    <span style="color:#76736b;font-size:9px;font-weight:600;">W</span>',
+
+                '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + gWVal + '</span>',
+
+                '    <span style="color:#76736b;font-size:9px;">' + (geminiWeeklyDelta || '--') + '</span>',
+
                 '  </span>',
+
                 '</div>',
-                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+
+                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
+
+
 
                 // Claude Segment
-                '<div style="display:inline-flex;align-items:center;gap:5px;">',
-                '  <span style="font-weight:700;color:#cbd5e1;font-size:11px;">C</span>',
-                '  <span class="ag-badge-5h" title="Claude 5h cycle remaining">',
-                '    <span style="font-weight:700;color:#f8fafc;font-size:11px;">' + cVal + '</span>',
-                '    <span style="color:#94a3b8;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (claude5hDelta || '--') + '</span>',
-                '  </span>',
-                '  <span class="ag-badge-wk" title="Claude Weekly quota remaining">',
-                '    <span style="color:#64748b;font-size:9px;font-weight:700;">W</span>',
-                '    <span style="font-weight:600;color:#cbd5e1;font-size:11px;">' + cWVal + '</span>',
 
-                '    <span style="color:#64748b;font-size:9.5px;font-variant-numeric:tabular-nums;">' + (claudeWeeklyDelta || '--') + '</span>',
+                '<div style="display:inline-flex;align-items:center;gap:5px;">',
+
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:700;color:#a8a59c;">C</span>',
+
+                '  <span class="ag-badge-5h" title="Claude 5h cycle remaining">',
+
+                '    <span style="font-weight:600;color:' + cColor + ';font-size:10.5px;">' + cVal + '</span>',
+
+                '    <span style="color:#76736b;font-size:9.5px;">' + (claude5hDelta || '--') + '</span>',
+
+                '  </span>',
+
+                '  <span class="ag-badge-wk" title="Claude Weekly quota remaining">',
+
+                '    <span style="color:#76736b;font-size:9px;font-weight:600;">W</span>',
+
+                '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + cWVal + '</span>',
+
+                '    <span style="color:#76736b;font-size:9px;">' + (claudeWeeklyDelta || '--') + '</span>',
 
                 '  </span>',
 
                 '</div>',
 
-                '<span style="width:1px;height:12px;background:rgba(255,255,255,0.18);"></span>',
+                '<span style="width:1px;height:12px;background:#2b2a27;"></span>',
 
 
 
                 // Control Center Button
 
-                '<button id="ag-btn-control-center" style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.22);border-radius:6px;color:#f8fafc;font-family:inherit;font-size:10.5px;font-weight:600;padding:1px 7px;height:18px;cursor:pointer;-webkit-app-region:no-drag;pointer-events:auto;outline:none;transition:all 0.15s ease;" title="Click to open Antigravity Control Center">',
-
-                '  <span style="font-size:10px;opacity:0.9;">⚙️</span>',
-
-                '  <span class="ag-btn-text">Control</span>',
-
-                '</button>'
+                controlBtnHtml
 
             ].join('');
 
@@ -671,7 +766,7 @@ const PRELOAD_INJECTION = `
 
             if (claudeWeekly !== null) tip += '• Claude (Weekly): ' + claudeWeekly.toFixed(1) + '% (Resets in ' + (claudeWeeklyDelta || 'N/A') + ')\\n';
 
-            tip += '\\n👉 Click [⚙️ Control] to launch';
+            tip += '\\nClick [Control] to open Control Center';
 
 
 
@@ -694,22 +789,6 @@ const PRELOAD_INJECTION = `
         if (btn && !btn.dataset.bound) {
 
             btn.dataset.bound = 'true';
-
-            btn.addEventListener('mouseenter', () => {
-
-                btn.style.background = 'rgba(255, 255, 255, 0.2)';
-
-                btn.style.borderColor = 'rgba(255, 255, 255, 0.4)';
-
-            });
-
-            btn.addEventListener('mouseleave', () => {
-
-                btn.style.background = 'rgba(255, 255, 255, 0.1)';
-
-                btn.style.borderColor = 'rgba(255, 255, 255, 0.22)';
-
-            });
 
             btn.addEventListener('click', (e) => {
 
