@@ -63,7 +63,7 @@ const COMBINED_SCRIPT = `
 
 // --- Antigravity Active Account Quota Top-Bar Indicator ---
 (function initAntigravityQuotaIndicator() {
-    const UI_VERSION = 'ag-swiss-ui-v2';
+    const UI_VERSION = 'ag-swiss-ui-v3';
     const existingPill = document.getElementById('ag-quota-pill');
     if (existingPill && existingPill.dataset.uiVersion === UI_VERSION) return;
     window.__agQuotaIndicatorRunning = true;
@@ -153,7 +153,7 @@ const COMBINED_SCRIPT = `
             }
 
             #ag-quota-pill {
-                max-width: calc(100vw - 320px);
+                max-width: calc(100vw - 410px);
                 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             }
             .ag-badge-5h {
@@ -206,16 +206,6 @@ const COMBINED_SCRIPT = `
             #ag-btn-control-center:hover svg {
                 color: #e55333;
             }
-            @media (max-width: 1020px) {
-                #ag-quota-pill {
-                    left: 260px !important;
-                    right: 142px !important;
-                    width: fit-content !important;
-                    margin: 0 auto !important;
-                    transform: none !important;
-                    max-width: calc(100vw - 410px) !important;
-                }
-            }
             @media (max-width: 900px) {
                 .ag-badge-wk { display: none !important; }
             }
@@ -249,7 +239,7 @@ const COMBINED_SCRIPT = `
             el.style.cssText = [
                 'position: fixed',
                 'top: 5px',
-                'left: 50%',
+                'left: calc(50vw + 59px)',
                 'transform: translateX(-50%)',
                 'height: 22px',
                 'z-index: 99999',

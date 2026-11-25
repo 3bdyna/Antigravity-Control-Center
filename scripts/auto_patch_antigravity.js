@@ -29,7 +29,7 @@ function isAlreadyPatched() {
         return buf.includes(Buffer.from(MARKER)) &&
                buf.includes(Buffer.from('lastValidStatus')) &&
                buf.includes(Buffer.from('control-center:ensure-daemon')) &&
-               buf.includes(Buffer.from('ag-swiss-ui-v2')) &&
+               buf.includes(Buffer.from('ag-swiss-ui-v3')) &&
                !buf.includes(Buffer.from("'http://127.0.0.1:28795/'"));
 
     } catch (e) {
@@ -54,7 +54,7 @@ const PRELOAD_INJECTION = `
 // --- Antigravity Active Account Quota Top-Bar Indicator ---
 
 (function initAntigravityQuotaIndicator() {
-    const UI_VERSION = 'ag-swiss-ui-v2';
+    const UI_VERSION = 'ag-swiss-ui-v3';
     window.__agQuotaIndicatorRunning = true;
 
     function quotaColor(val) {
@@ -187,7 +187,7 @@ const PRELOAD_INJECTION = `
 
             #ag-quota-pill {
 
-                max-width: calc(100vw - 320px);
+                max-width: calc(100vw - 410px);
 
                 transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -293,26 +293,6 @@ const PRELOAD_INJECTION = `
 
             }
 
-            @media (max-width: 1020px) {
-
-                #ag-quota-pill {
-
-                    left: 260px !important;
-
-                    right: 142px !important;
-
-                    width: fit-content !important;
-
-                    margin: 0 auto !important;
-
-                    transform: none !important;
-
-                    max-width: calc(100vw - 410px) !important;
-
-                }
-
-            }
-
             @media (max-width: 900px) {
 
                 .ag-badge-wk { display: none !important; }
@@ -375,7 +355,7 @@ const PRELOAD_INJECTION = `
 
                 'top: 5px',
 
-                'left: 50%',
+                'left: calc(50vw + 59px)',
 
                 'transform: translateX(-50%)',
 
