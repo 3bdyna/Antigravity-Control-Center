@@ -29,7 +29,7 @@ function isAlreadyPatched() {
         return buf.includes(Buffer.from(MARKER)) &&
                buf.includes(Buffer.from('lastValidStatus')) &&
                buf.includes(Buffer.from('control-center:ensure-daemon')) &&
-               buf.includes(Buffer.from('ag-swiss-ui-v3')) &&
+               buf.includes(Buffer.from('ag-swiss-ui-v4')) &&
                !buf.includes(Buffer.from("'http://127.0.0.1:28795/'"));
 
     } catch (e) {
@@ -54,7 +54,7 @@ const PRELOAD_INJECTION = `
 // --- Antigravity Active Account Quota Top-Bar Indicator ---
 
 (function initAntigravityQuotaIndicator() {
-    const UI_VERSION = 'ag-swiss-ui-v3';
+    const UI_VERSION = 'ag-swiss-ui-v4';
     window.__agQuotaIndicatorRunning = true;
 
     function quotaColor(val) {
@@ -230,8 +230,6 @@ const PRELOAD_INJECTION = `
                 font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
 
                 font-variant-numeric: tabular-nums;
-
-                opacity: 0.78;
 
             }
 
@@ -650,23 +648,23 @@ const PRELOAD_INJECTION = `
 
                 '<div style="display:inline-flex;align-items:center;gap:5px;">',
 
-                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:600;color:#76736b;">G</span>',
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10.5px;font-weight:600;color:#a8a59c;">G</span>',
 
                 '  <span class="ag-badge-5h" title="Gemini 5h cycle remaining">',
 
-                '    <span style="font-weight:500;color:' + gColor + ';font-size:10.5px;">' + gVal + '</span>',
+                '    <span style="font-weight:600;color:' + gColor + ';font-size:11px;">' + gVal + '</span>',
 
-                '    <span style="color:#76736b;font-size:9.5px;">' + (gemini5hDelta || '--') + '</span>',
+                '    <span style="color:#b8b4aa;font-size:10.5px;font-weight:400;">' + (gemini5hDelta || '--') + '</span>',
 
                 '  </span>',
 
                 '  <span class="ag-badge-wk" title="Gemini Weekly quota remaining">',
 
-                '    <span style="color:#6b6860;font-size:9px;">W</span>',
+                '    <span style="color:#9c988e;font-size:10px;font-weight:600;">W</span>',
 
-                '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + gWVal + '</span>',
+                '    <span style="font-weight:600;color:#e6e3db;font-size:11px;">' + gWVal + '</span>',
 
-                '    <span style="color:#6b6860;font-size:9px;">' + (geminiWeeklyDelta || '--') + '</span>',
+                '    <span style="color:#b8b4aa;font-size:10.5px;font-weight:400;">' + (geminiWeeklyDelta || '--') + '</span>',
 
                 '  </span>',
 
@@ -680,23 +678,23 @@ const PRELOAD_INJECTION = `
 
                 '<div style="display:inline-flex;align-items:center;gap:5px;">',
 
-                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10px;font-weight:600;color:#76736b;">C</span>',
+                '  <span style="font-family:&quot;IBM Plex Mono&quot;,&quot;Cascadia Mono&quot;,Consolas,monospace;font-size:10.5px;font-weight:600;color:#a8a59c;">C</span>',
 
                 '  <span class="ag-badge-5h" title="Claude 5h cycle remaining">',
 
-                '    <span style="font-weight:500;color:' + cColor + ';font-size:10.5px;">' + cVal + '</span>',
+                '    <span style="font-weight:600;color:' + cColor + ';font-size:11px;">' + cVal + '</span>',
 
-                '    <span style="color:#76736b;font-size:9.5px;">' + (claude5hDelta || '--') + '</span>',
+                '    <span style="color:#b8b4aa;font-size:10.5px;font-weight:400;">' + (claude5hDelta || '--') + '</span>',
 
                 '  </span>',
 
                 '  <span class="ag-badge-wk" title="Claude Weekly quota remaining">',
 
-                '    <span style="color:#6b6860;font-size:9px;">W</span>',
+                '    <span style="color:#9c988e;font-size:10px;font-weight:600;">W</span>',
 
-                '    <span style="font-weight:500;color:#a8a59c;font-size:10px;">' + cWVal + '</span>',
+                '    <span style="font-weight:600;color:#e6e3db;font-size:11px;">' + cWVal + '</span>',
 
-                '    <span style="color:#6b6860;font-size:9px;">' + (claudeWeeklyDelta || '--') + '</span>',
+                '    <span style="color:#b8b4aa;font-size:10.5px;font-weight:400;">' + (claudeWeeklyDelta || '--') + '</span>',
 
                 '  </span>',
 
