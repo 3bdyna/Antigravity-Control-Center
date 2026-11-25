@@ -4,10 +4,7 @@
 
 [![Download Latest Windows Installer (.exe)](https://img.shields.io/badge/Download-Latest%20Windows%20Installer%20(.exe)-2ea44f?style=for-the-badge&logo=windows)](https://github.com/3bdyna/Antigravity-Control-Center/releases/latest)
 
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=flat-square)
-![Stack](https://img.shields.io/badge/Stack-Python%20%7C%20PyQt5%20%7C%20WebEngine-3776AB?style=flat-square)
-![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20DPAPI-4479A1?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=flat-square) ![Stack](https://img.shields.io/badge/Stack-Python%20%7C%20PyQt5%20%7C%20WebEngine-3776AB?style=flat-square) ![Storage](https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20DPAPI-4479A1?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 > **100% local · Windows DPAPI-encrypted credentials · Zero telemetry · SHA-256 verified built-in auto-updater**
 
@@ -115,17 +112,17 @@ It is completely optional. When both Google Antigravity IDE and Node.js are inst
 
 ```text
 .
-├── main.py                        # Entry launcher (delegates to app.main)
-├── app.py                         # HTTP/SSE server (:28795), PyQt5 tray daemon, on-demand WebEngine UI, AsarWatchdog
-├── switcher.py                    # Parallel quota fetcher, Windows DPAPI (AGDPAPI1) & Credential Manager switcher
-├── token_tracker.py               # Transcript watcher, SQLite WAL analytics, heatmap/cadence queries, HTML report
-├── updater.py                     # Stdlib-only HTTPS + SHA-256 verified GitHub Releases self-updater
-├── version.py                     # App version & user-data/update directory helpers
-├── ui_html.py                     # Static asset loader (source & PyInstaller _MEIPASS / _internal layouts)
-├── AntigravityControlCenter.spec  # PyInstaller spec bundling app.py, app_icon.ico, and static/
-├── installer/                     # Inno Setup 6 per-user installer script
-├── static/                        # Frontend UI (index.html, app.js, styles.css, tailwind.css)
-├── scripts/                       # Optional Node.js / VBS helpers for app.asar top-bar pill & CDP drag daemon
+├── main.py                        # Entry launcher (app.main)
+├── app.py                         # HTTP/SSE (:28795), tray, UI, AsarWatchdog
+├── switcher.py                    # Parallel quota fetcher & DPAPI switcher
+├── token_tracker.py               # Transcript watcher & SQLite WAL analytics
+├── updater.py                     # HTTPS + SHA-256 GitHub Releases updater
+├── version.py                     # Version & user-data/update path helpers
+├── ui_html.py                     # Static loader (source & PyInstaller)
+├── AntigravityControlCenter.spec  # PyInstaller spec (app, icon, static/)
+├── installer/                     # Inno Setup 6 per-user installer
+├── static/                        # Web UI (HTML, JS, CSS, Tailwind)
+├── scripts/                       # Optional app.asar pill & CDP daemons
 └── docs/screenshots/              # Redacted README screenshots
 ```
 
