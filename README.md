@@ -27,6 +27,11 @@ Hitting model rate limits mid-session or guessing when your Google Antigravity I
 
 ## Inside the Dashboard
 
+### Live Antigravity IDE Top-Bar Quota Pill
+Always-visible titlebar pill inside Google Antigravity IDE showing active account status, live **Gemini** (`G`) and **Claude & GPT** (`C`) 5-hour & weekly (`W`) quotas with reset countdowns, and a one-click **Control** button to open the dashboard.
+
+![Antigravity IDE — Live Top-Bar Quota Pill](docs/screenshots/ide-topbar-pill.png)
+
 ### Token Analytics & 52-Week Heatmaps
 Inspect lifetime or per-account usage across **Today**, **Last 7D**, **Month**, **Year**, or **All Time**—including a 52-week coding activity heatmap, token timeline, 24-hour cadence split, model distribution bars, and a live SQL event log.
 
