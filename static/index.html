@@ -75,6 +75,31 @@
   <!-- Main Container -->
   <main class="flex-1 max-w-6xl w-full mx-auto p-3.5 md:p-4 space-y-3.5">
 
+    <!-- Antigravity Post-Update Restart Banner (visible across all tabs when needed) -->
+    <div id="ag-restart-banner" class="hidden swiss-card p-3 px-4 flex flex-wrap items-center justify-between gap-3" style="border-left: 3px solid var(--amber-text);">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-8 h-8 swiss-well flex items-center justify-center shrink-0" style="color: var(--amber-text);">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="text-xs font-semibold swiss-text-primary">Antigravity updated — restart needed to reconnect top-bar indicator</div>
+          <div id="ag-restart-banner-sub" class="text-[11px] swiss-text-muted mt-0.5">app.asar was re-patched on disk. Restart Antigravity once to load it.</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 ml-auto">
+        <label class="flex items-center gap-1.5 text-[11px] swiss-text-secondary cursor-pointer select-none mr-1" title="Automatically relaunch Antigravity once right after an Antigravity update patch (only when freshly started and no AI agent is running)">
+          <input id="banner-auto-restart-toggle" type="checkbox" onchange="toggleAutoRestartOnPatch(this.checked)" class="accent-amber-400 cursor-pointer">
+          <span>Auto-restart next time</span>
+        </label>
+        <button id="btn-banner-restart-ag" type="button" onclick="restartAntigravityFromBanner()" class="swiss-btn-accent h-7 px-3 text-xs">
+          Restart Antigravity
+        </button>
+        <button type="button" onclick="dismissRestartBanner()" class="swiss-btn h-7 px-2.5 text-xs">
+          Dismiss
+        </button>
+      </div>
+    </div>
+
     <!-- ========================================== -->
     <!-- PAGE 1: ACCOUNTS & QUOTAS                  -->
     <!-- ========================================== -->
@@ -734,7 +759,7 @@
         </div>
 
         <!-- System Maintenance Actions -->
-        <div class="swiss-card p-3 space-y-1 flex flex-col justify-between">
+        <div class="swiss-card p-3 space-y-2 flex flex-col justify-between">
           <div class="flex items-center justify-between">
             <span class="swiss-micro-label">System Maintenance</span>
             <span class="text-[10px] swiss-text-muted font-mono" id="stale-lock-status">Ready</span>
@@ -746,7 +771,17 @@
             <button type="button" onclick="triggerDbBackup()" class="swiss-btn flex-1 h-7 text-xs" title="Create safe instant DB backup">
               Backup DB
             </button>
+            <button type="button" onclick="restartAntigravityFromBanner()" class="swiss-btn flex-1 h-7 text-xs" title="Restart Antigravity IDE to reload the top-bar indicator">
+              Restart IDE
+            </button>
           </div>
+          <label class="flex items-center justify-between gap-2 pt-1 border-t border-hairline cursor-pointer select-none" title="When Antigravity updates itself, automatically relaunch it once after re-patching app.asar (skipped if Antigravity has been open > 2 min or an AI agent is actively generating)">
+            <span class="text-[11px] swiss-text-secondary">Auto-restart IDE after update patch</span>
+            <span class="flex items-center gap-1.5 shrink-0">
+              <span id="auto-restart-status-label" class="text-[10px] font-mono swiss-text-muted">ON</span>
+              <input id="settings-auto-restart-toggle" type="checkbox" checked onchange="toggleAutoRestartOnPatch(this.checked)" class="accent-emerald-400 cursor-pointer">
+            </span>
+          </label>
         </div>
       </div>
 
@@ -897,6 +932,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>

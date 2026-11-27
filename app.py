@@ -112,6 +112,190 @@ _SSE_CLIENTS = []
 _UI_SSE_CLIENTS = set()
 _SHOW_ACK = threading.Event()
 
+SETTINGS_FILE = os.path.join(SWITCHER_DIR, "settings.json")
+_SETTINGS_LOCK = threading.Lock()
+_DEFAULT_SETTINGS = {
+    "auto_restart_antigravity_on_patch": True,
+}
+_SETTINGS_CACHE = None
+
+_PATCH_STATE_LOCK = threading.Lock()
+_PATCH_STATE = {
+    "restart_needed": False,
+    "patched_at": 0.0,
+    "auto_restarted": False,
+    "reason": "",
+}
+
+_AUTO_RESTART_MAX_UPTIME_SEC = 120.0
+
+
+def load_settings():
+    """Load persisted Control Center settings from disk (thread-safe)."""
+    global _SETTINGS_CACHE
+    with _SETTINGS_LOCK:
+        if _SETTINGS_CACHE is not None:
+            return dict(_SETTINGS_CACHE)
+        data = dict(_DEFAULT_SETTINGS)
+        try:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    for k in _DEFAULT_SETTINGS:
+                        if k in raw:
+                            data[k] = bool(raw[k])
+        except Exception:
+            pass
+        _SETTINGS_CACHE = data
+        return dict(data)
+
+
+def get_setting(key, default=None):
+    settings = load_settings()
+    if key in settings:
+        return settings[key]
+    return _DEFAULT_SETTINGS.get(key, default)
+
+
+def update_settings(updates):
+    """Persist validated Control Center settings atomically."""
+    global _SETTINGS_CACHE
+    with _SETTINGS_LOCK:
+        current = dict(_DEFAULT_SETTINGS)
+        if _SETTINGS_CACHE is not None:
+            current.update(_SETTINGS_CACHE)
+        elif os.path.exists(SETTINGS_FILE):
+            try:
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    for k in _DEFAULT_SETTINGS:
+                        if k in raw:
+                            current[k] = bool(raw[k])
+            except Exception:
+                pass
+        for k, v in (updates or {}).items():
+            if k in _DEFAULT_SETTINGS:
+                current[k] = bool(v)
+        _SETTINGS_CACHE = dict(current)
+        try:
+            ensure_dirs()
+            atomic_write_text(SETTINGS_FILE, json.dumps(current, indent=2))
+        except Exception as e:
+            log_msg(f"[Settings] Failed to persist settings.json: {e}")
+        return dict(current)
+
+
+def get_patch_state():
+    with _PATCH_STATE_LOCK:
+        return dict(_PATCH_STATE)
+
+
+def set_patch_state(restart_needed=None, patched_at=None, auto_restarted=None, reason=None):
+    with _PATCH_STATE_LOCK:
+        if restart_needed is not None:
+            _PATCH_STATE["restart_needed"] = bool(restart_needed)
+        if patched_at is not None:
+            _PATCH_STATE["patched_at"] = float(patched_at)
+        if auto_restarted is not None:
+            _PATCH_STATE["auto_restarted"] = bool(auto_restarted)
+        if reason is not None:
+            _PATCH_STATE["reason"] = str(reason)
+        return dict(_PATCH_STATE)
+
+
+def _get_antigravity_uptime_sec():
+    """Return uptime in seconds of the oldest running Antigravity.exe process, or None if not running."""
+    if os.name != "nt":
+        return None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        TH32CS_SNAPPROCESS = 0x00000002
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+        class PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", ctypes.c_uint32),
+                ("cntUsage", ctypes.c_uint32),
+                ("th32ProcessID", ctypes.c_uint32),
+                ("th32DefaultHeapID", ctypes.c_void_p),
+                ("th32ModuleID", ctypes.c_uint32),
+                ("cntThreads", ctypes.c_uint32),
+                ("th32ParentProcessID", ctypes.c_uint32),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", ctypes.c_uint32),
+                ("szExeFile", ctypes.c_wchar * 260),
+            ]
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [
+                ("dwLowDateTime", ctypes.c_uint32),
+                ("dwHighDateTime", ctypes.c_uint32),
+            ]
+
+        kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+        kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        kernel32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.Process32FirstW.restype = ctypes.c_int
+        kernel32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.Process32NextW.restype = ctypes.c_int
+        kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.GetProcessTimes.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+        ]
+        kernel32.GetProcessTimes.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle.restype = ctypes.c_int
+
+        snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if not snap or snap == INVALID_HANDLE_VALUE:
+            return None
+
+        start_times = []
+        found_any = False
+        try:
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            ok = kernel32.Process32FirstW(snap, ctypes.byref(entry))
+            while ok:
+                if entry.szExeFile.lower() == "antigravity.exe":
+                    found_any = True
+                    h_proc = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, entry.th32ProcessID)
+                    if h_proc:
+                        try:
+                            c_time, e_time, k_time, u_time = FILETIME(), FILETIME(), FILETIME(), FILETIME()
+                            if kernel32.GetProcessTimes(
+                                h_proc,
+                                ctypes.byref(c_time),
+                                ctypes.byref(e_time),
+                                ctypes.byref(k_time),
+                                ctypes.byref(u_time),
+                            ):
+                                ft_val = (c_time.dwHighDateTime << 32) | c_time.dwLowDateTime
+                                unix_ts = (ft_val / 10_000_000.0) - 11644473600.0
+                                if unix_ts > 0:
+                                    start_times.append(unix_ts)
+                        finally:
+                            kernel32.CloseHandle(h_proc)
+                ok = kernel32.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            kernel32.CloseHandle(snap)
+
+        if not found_any:
+            return None
+        if not start_times:
+            return 999999.0  # Running, but could not query start time — treat as active session
+        return max(0.0, time.time() - min(start_times))
+    except Exception:
+        return None
+
 _UPDATE_LOCK = threading.Lock()
 _UPDATE_CANCEL_EVENT = threading.Event()
 _UPDATE_STATE = {
@@ -379,7 +563,7 @@ class AntigravityAsarWatchdog(threading.Thread):
                 return candidate
         return None
 
-    def _notify_restart_needed(self):
+    def _notify_restart_needed(self, title="Antigravity Updated", body="Top-bar usage indicator was re-patched. Restart Antigravity once to show it."):
         try:
             if TRAY_ICON is not None:
                 from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
@@ -387,11 +571,25 @@ class AntigravityAsarWatchdog(threading.Thread):
                     TRAY_ICON,
                     "showMessage",
                     Qt.QueuedConnection,
-                    Q_ARG(str, "Antigravity Updated"),
-                    Q_ARG(str, "Top-bar usage indicator was re-patched. Restart Antigravity once to show it."),
+                    Q_ARG(str, title),
+                    Q_ARG(str, body),
                 )
         except Exception:
             pass
+
+    def _get_antigravity_uptime_sec(self):
+        return _get_antigravity_uptime_sec()
+
+    def _clear_restart_banner_if_restarted(self):
+        state = get_patch_state()
+        if not state.get("restart_needed"):
+            return
+        uptime = self._get_antigravity_uptime_sec()
+        patched_at = state.get("patched_at", 0.0)
+        if uptime is None or (time.time() - uptime) > (patched_at + 1.0):
+            set_patch_state(restart_needed=False, reason="")
+            LocalApiHandler.cached_status = None
+            broadcast_status_event()
 
     def run(self):
         time.sleep(3.0)
@@ -420,6 +618,7 @@ class AntigravityAsarWatchdog(threading.Thread):
             return
         self._missing_node_logged = False
         try:
+            self._clear_restart_banner_if_restarted()
             mtime = os.path.getmtime(self.asar_path)
             if self.last_asar_mtime is not None and mtime == self.last_asar_mtime:
                 return
@@ -441,7 +640,43 @@ class AntigravityAsarWatchdog(threading.Thread):
                 log_msg(f"{prefix} {out}")
                 self.last_asar_mtime = os.path.getmtime(self.asar_path) if os.path.exists(self.asar_path) else mtime
                 if "Successfully patched Antigravity app.asar!" in out and "Successfully ensured draggable titlebar" not in out:
-                    self._notify_restart_needed()
+                    patched_at = time.time()
+                    uptime = self._get_antigravity_uptime_sec()
+                    if uptime is None:
+                        # Antigravity isn't running — next launch will pick up the patched asar automatically.
+                        set_patch_state(restart_needed=False, patched_at=patched_at, auto_restarted=False, reason="")
+                    else:
+                        auto_enabled = bool(get_setting("auto_restart_antigravity_on_patch", True))
+                        recently_started = uptime <= _AUTO_RESTART_MAX_UPTIME_SEC
+                        ai_busy = False
+                        try:
+                            ai_busy = bool(is_ai_generating())
+                        except Exception:
+                            ai_busy = False
+
+                        if auto_enabled and (not is_initial) and recently_started and (not ai_busy):
+                            log_msg(f"[AsarWatchdog] Auto-restarting Antigravity (uptime {uptime:.0f}s) to reconnect top-bar indicator...")
+                            if restart_antigravity():
+                                set_patch_state(restart_needed=False, patched_at=patched_at, auto_restarted=True, reason="")
+                                LocalApiHandler.cached_status = None
+                                broadcast_status_event()
+                                self._notify_restart_needed(
+                                    title="Antigravity Reconnected",
+                                    body="Top-bar indicator was re-patched and Antigravity was relaunched automatically.",
+                                )
+                                return
+                            log_msg("[AsarWatchdog] Auto-restart failed; showing manual restart banner.")
+
+                        if ai_busy:
+                            reason = "ai_busy"
+                        elif auto_enabled and (not is_initial) and (not recently_started):
+                            reason = "session_active"
+                        else:
+                            reason = "manual"
+                        set_patch_state(restart_needed=True, patched_at=patched_at, auto_restarted=False, reason=reason)
+                        LocalApiHandler.cached_status = None
+                        broadcast_status_event()
+                        self._notify_restart_needed()
             else:
                 err = (res.stderr or res.stdout or "").strip()
                 log_msg(f"[AsarWatchdog] Patch script error ({res.returncode}): {err}")
@@ -1006,6 +1241,42 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json({"ok": True})
             return
 
+        if path == "/api/antigravity/restart":
+            log_msg("Manual Antigravity IDE restart requested from Control Center.")
+            ok = False
+            try:
+                ok = bool(restart_antigravity())
+            except Exception as e:
+                log_msg(f"Failed to restart Antigravity IDE: {e}")
+                self.send_json({"ok": False, "error": str(e)}, status_code=500)
+                return
+            if ok:
+                set_patch_state(restart_needed=False, reason="")
+                LocalApiHandler.cached_status = None
+                broadcast_status_event()
+                self.send_json({"ok": True})
+            else:
+                self.send_json({"ok": False, "error": "Antigravity executable not found."}, status_code=404)
+            return
+
+        if path == "/api/antigravity/dismiss-restart":
+            set_patch_state(restart_needed=False, reason="")
+            LocalApiHandler.cached_status = None
+            broadcast_status_event()
+            self.send_json({"ok": True})
+            return
+
+        if path == "/api/settings":
+            new_settings = update_settings(post_data)
+            log_msg(
+                "Updated setting: auto_restart_antigravity_on_patch = "
+                f"{new_settings.get('auto_restart_antigravity_on_patch')}"
+            )
+            LocalApiHandler.cached_status = None
+            broadcast_status_event()
+            self.send_json({"ok": True, "settings": new_settings})
+            return
+
         if path == "/api/enroll":
             log_msg("Initiating Google OAuth loopback enrollment...")
             try:
@@ -1217,6 +1488,7 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
+        patch_state = get_patch_state()
         payload = {
             "active": active,
             "accounts": accounts,
@@ -1227,7 +1499,10 @@ class LocalApiHandler(http.server.BaseHTTPRequestHandler):
             "autopilot_status": AUTOPILOT_STATUS_TEXT if AUTOPILOT_RUNNING else "OFF",
             "logs": logs,
             "burn_rate": burn_rate_val,
-            "tokens_per_sec": burn_rate_sec
+            "tokens_per_sec": burn_rate_sec,
+            "antigravity_restart_needed": patch_state.get("restart_needed", False),
+            "antigravity_patch_reason": patch_state.get("reason", ""),
+            "auto_restart_antigravity_on_patch": get_setting("auto_restart_antigravity_on_patch", True),
         }
         LocalApiHandler.cached_status = payload
         LocalApiHandler.last_status_fetch = now

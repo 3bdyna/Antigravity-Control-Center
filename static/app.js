@@ -431,6 +431,7 @@ let currentState = null;
         try { localStorage.setItem('ag_last_status', JSON.stringify(currentState)); } catch (e) {}
         renderAccounts();
         updateAutopilotUI();
+        updateAntigravityPatchUI();
 
         if (currentState.burn_rate !== undefined) {
           const tpm = currentState.burn_rate || 0;
@@ -1917,6 +1918,101 @@ async function loadAnalytics() {
         }
       } else if (!willExpand && hasDetailRow) {
         nextRow.remove();
+      }
+    }
+
+    function updateAntigravityPatchUI() {
+      const state = currentState || {};
+      const restartNeeded = Boolean(state.antigravity_restart_needed);
+      const reason = state.antigravity_patch_reason || '';
+      const autoEnabled = state.auto_restart_antigravity_on_patch !== false;
+
+      const banner = document.getElementById('ag-restart-banner');
+      if (banner) {
+        banner.classList.toggle('hidden', !restartNeeded);
+      }
+
+      const sub = document.getElementById('ag-restart-banner-sub');
+      if (sub) {
+        if (reason === 'ai_busy') {
+          sub.innerText = 'Skipped auto-restart because an AI agent was generating. Click to restart Antigravity once ready.';
+        } else if (reason === 'session_active') {
+          sub.innerText = 'Skipped auto-restart because Antigravity was already open. Click to restart Antigravity and load the top-bar indicator.';
+        } else {
+          sub.innerText = 'app.asar was re-patched on disk. Restart Antigravity once to reconnect the top-bar indicator.';
+        }
+      }
+
+      const bannerToggle = document.getElementById('banner-auto-restart-toggle');
+      if (bannerToggle) bannerToggle.checked = autoEnabled;
+
+      const settingsToggle = document.getElementById('settings-auto-restart-toggle');
+      if (settingsToggle) settingsToggle.checked = autoEnabled;
+
+      const statusLabel = document.getElementById('auto-restart-status-label');
+      if (statusLabel) {
+        statusLabel.innerText = autoEnabled ? 'ON' : 'OFF';
+        statusLabel.style.color = autoEnabled ? 'var(--sage-text)' : '';
+      }
+    }
+
+    async function restartAntigravityFromBanner() {
+      const btn = document.getElementById('btn-banner-restart-ag');
+      const prevText = btn ? btn.innerText : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Restarting...';
+      }
+      showToast('Restarting Antigravity IDE...', 'info', 2500);
+      try {
+        const res = await fetch('/api/antigravity/restart', { method: 'POST' });
+        const d = await res.json();
+        if (d && d.ok) {
+          showToast('Antigravity restarted — top-bar indicator will reconnect in a few seconds.', 'success', 4500);
+          await fetchStatus(true);
+        } else {
+          showToast(`Could not restart Antigravity: ${(d && d.error) || 'Unknown error'}`, 'error', 4500);
+        }
+      } catch (e) {
+        showToast('Error restarting Antigravity: ' + e.message, 'error', 4500);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = prevText || 'Restart Antigravity';
+        }
+      }
+    }
+
+    async function dismissRestartBanner() {
+      const banner = document.getElementById('ag-restart-banner');
+      if (banner) banner.classList.add('hidden');
+      try {
+        await fetch('/api/antigravity/dismiss-restart', { method: 'POST' });
+      } catch (_) {}
+    }
+
+    async function toggleAutoRestartOnPatch(enabled) {
+      const val = Boolean(enabled);
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto_restart_antigravity_on_patch: val })
+        });
+        const d = await res.json();
+        if (d && d.ok) {
+          if (currentState) currentState.auto_restart_antigravity_on_patch = val;
+          updateAntigravityPatchUI();
+          showToast(
+            val
+              ? 'Auto-restart after Antigravity updates enabled.'
+              : 'Auto-restart disabled — you will see a 1-click restart banner instead.',
+            'success',
+            3500
+          );
+        }
+      } catch (e) {
+        showToast('Failed to save setting: ' + e.message, 'error', 4000);
       }
     }
 

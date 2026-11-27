@@ -169,6 +169,8 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
             expected_mtime = os.path.getmtime(wd.asar_path)
 
             with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch.object(wd, "_get_antigravity_uptime_sec", return_value=25.0), \
+                 mock.patch.object(app, "is_ai_generating", return_value=False), \
                  mock.patch.object(app, "log_msg") as mock_log, \
                  mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
                  mock.patch("app.subprocess.run") as mock_run:
@@ -206,6 +208,8 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
             current_time = [1000.0]
 
             with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch.object(wd, "_get_antigravity_uptime_sec", return_value=25.0), \
+                 mock.patch.object(app, "is_ai_generating", return_value=False), \
                  mock.patch.object(app, "log_msg") as mock_log, \
                  mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
                  mock.patch("app.time.time", side_effect=lambda: current_time[0]), \
@@ -246,6 +250,121 @@ class TestAntigravityAsarWatchdog(unittest.TestCase):
                 self.assertEqual(mock_run.call_count, 2)
                 self.assertEqual(wd.last_asar_mtime, expected_mtime)
                 mock_notify.assert_called_once()
+
+    def test_post_update_auto_restarts_when_fresh_and_idle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            asar_file = Path(wd.asar_path)
+            asar_file.write_bytes(b"asar-v2")
+            script_file = Path(wd.patch_script)
+            script_file.parent.mkdir(parents=True, exist_ok=True)
+            script_file.write_text("// patcher", encoding="utf-8")
+
+            # Simulate prior baseline mtime so this check is a post-update detection (not initial)
+            wd.last_asar_mtime = os.path.getmtime(wd.asar_path) - 60.0
+            app.set_patch_state(restart_needed=False, patched_at=0.0, auto_restarted=False, reason="")
+
+            with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch.object(wd, "_get_antigravity_uptime_sec", return_value=20.0), \
+                 mock.patch.object(app, "get_setting", return_value=True), \
+                 mock.patch.object(app, "is_ai_generating", return_value=False), \
+                 mock.patch.object(app, "restart_antigravity", return_value=True) as mock_restart, \
+                 mock.patch.object(app, "broadcast_status_event"), \
+                 mock.patch.object(app, "log_msg"), \
+                 mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
+                 mock.patch("app.subprocess.run") as mock_run:
+                mock_run.return_value = mock.Mock(
+                    returncode=0,
+                    stdout="[AutoPatcher] Successfully patched Antigravity app.asar!\n",
+                    stderr="",
+                )
+                wd.check_and_patch()
+
+                mock_restart.assert_called_once()
+                mock_notify.assert_called_once()
+                state = app.get_patch_state()
+                self.assertFalse(state["restart_needed"])
+                self.assertTrue(state["auto_restarted"])
+
+    def test_post_update_skips_auto_restart_when_ai_busy_or_session_old_or_disabled(self):
+        cases = [
+            # (auto_enabled, uptime, ai_busy, expected_reason)
+            (True, 15.0, True, "ai_busy"),
+            (True, 600.0, False, "session_active"),
+            (False, 15.0, False, "manual"),
+        ]
+        for auto_enabled, uptime, ai_busy, expected_reason in cases:
+            with self.subTest(expected_reason=expected_reason):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    wd = self._make_watchdog(root)
+                    asar_file = Path(wd.asar_path)
+                    asar_file.write_bytes(b"asar-v3")
+                    script_file = Path(wd.patch_script)
+                    script_file.parent.mkdir(parents=True, exist_ok=True)
+                    script_file.write_text("// patcher", encoding="utf-8")
+
+                    wd.last_asar_mtime = os.path.getmtime(wd.asar_path) - 60.0
+                    app.set_patch_state(restart_needed=False, patched_at=0.0, auto_restarted=False, reason="")
+
+                    with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                         mock.patch.object(wd, "_get_antigravity_uptime_sec", return_value=uptime), \
+                         mock.patch.object(app, "get_setting", return_value=auto_enabled), \
+                         mock.patch.object(app, "is_ai_generating", return_value=ai_busy), \
+                         mock.patch.object(app, "restart_antigravity", return_value=True) as mock_restart, \
+                         mock.patch.object(app, "broadcast_status_event"), \
+                         mock.patch.object(app, "log_msg"), \
+                         mock.patch.object(wd, "_notify_restart_needed") as mock_notify, \
+                         mock.patch("app.subprocess.run") as mock_run:
+                        mock_run.return_value = mock.Mock(
+                            returncode=0,
+                            stdout="[AutoPatcher] Successfully patched Antigravity app.asar!\n",
+                            stderr="",
+                        )
+                        wd.check_and_patch()
+
+                        mock_restart.assert_not_called()
+                        mock_notify.assert_called_once()
+                        state = app.get_patch_state()
+                        self.assertTrue(state["restart_needed"])
+                        self.assertEqual(state["reason"], expected_reason)
+
+    def test_restart_banner_auto_clears_after_manual_antigravity_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wd = self._make_watchdog(root)
+            asar_file = Path(wd.asar_path)
+            asar_file.write_bytes(b"asar")
+            script_file = Path(wd.patch_script)
+            script_file.parent.mkdir(parents=True, exist_ok=True)
+            script_file.write_text("// patcher", encoding="utf-8")
+
+            wd.last_asar_mtime = os.path.getmtime(wd.asar_path)
+            app.set_patch_state(restart_needed=True, patched_at=1000.0, auto_restarted=False, reason="manual")
+
+            with mock.patch.object(wd, "_resolve_node_exe", return_value="node"), \
+                 mock.patch("app.time.time", return_value=1020.0), \
+                 mock.patch.object(wd, "_get_antigravity_uptime_sec", return_value=5.0), \
+                 mock.patch.object(app, "broadcast_status_event") as mock_broadcast:
+                # Started at 1020 - 5 = 1015 > patched_at (1000) -> should clear banner
+                wd.check_and_patch()
+                self.assertFalse(app.get_patch_state()["restart_needed"])
+                mock_broadcast.assert_called_once()
+
+    def test_settings_persistence_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "settings.json"
+            with mock.patch.object(app, "SETTINGS_FILE", str(settings_path)), \
+                 mock.patch.object(app, "_SETTINGS_CACHE", None), \
+                 mock.patch.object(app, "ensure_dirs"):
+                self.assertTrue(app.get_setting("auto_restart_antigravity_on_patch"))
+                app.update_settings({"auto_restart_antigravity_on_patch": False})
+                self.assertFalse(app.get_setting("auto_restart_antigravity_on_patch"))
+
+                # Clear cache and reload from disk
+                app._SETTINGS_CACHE = None
+                self.assertFalse(app.get_setting("auto_restart_antigravity_on_patch"))
 
 
 if __name__ == "__main__":
