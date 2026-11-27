@@ -26,38 +26,16 @@ Windows desktop Control Center (PyQt5 + PyQtWebEngine + local HTTP/SSE server on
 - **Deployed companion scripts:** `%LOCALAPPDATA%\Programs\AntigravityControlCenter\` (`auto_patch_antigravity.js`, `antigravity-drag-daemon.js`, `.vbs`, `.pyw`) — bundled automatically by the Inno Setup installer.
 - **User state, SQLite DB & updates cache:** `%USERPROFILE%\.gemini\antigravity-switcher\` (`accounts/`, `active_email.txt`, `quotas_cache.json`, `tokens_history.db`, `autopilot.log`, `app_crash.log`, `updates/`)
 
-## Build, Test & Release Workflow
-1. Run from source for quick testing:
-   ```powershell
-   python main.py
-   ```
-2. Run automated guardrail unit tests:
-   ```powershell
-   $env:PYTHONPATH=".;tests"; python -m unittest test_release -v
-   ```
-3. Build local installer & `SHA256SUMS.txt` (outputs to `dist\release\`):
-   ```powershell
-   .\scripts\build_release.ps1
-   ```
-4. Publish a GitHub Release (ONLY when explicitly requested):
-   ```powershell
-   .\scripts\build_release.ps1 -Publish
-   ```
+## Commands & On-Demand Release Runbook
+- **Run from source:** `python main.py`
+- **Guardrail unit tests:** `$env:PYTHONPATH=".;tests"; python -m unittest test_release -v`
+- **Local app updates (`-InstallLocal` / `-StaticOnly`), packaging, installer/updater edits, or `"publish update"`:** Load the on-demand `publish-release` skill (`.agents/skills/publish-release/SKILL.md`).
 
-## Architectural & Safety Rules
+## Always-On Architectural & Safety Rules
 1. **Preserve DPAPI & Atomic Writes:** Always use `atomic_write_bytes` / `atomic_write_text` in `switcher.py` for credential and cache files; never write plaintext credentials outside DPAPI blobs.
 2. **Never Break Official Auto-Updater:** In `scripts/auto_patch_antigravity.js`, preserve `cleanUpdaterCache()` as a no-op; never delete `%LOCALAPPDATA%\antigravity-updater`.
-3. **Single-Instance & Low-Memory Tray:** Keep Windows Named Mutex checks (`Local\AntigravityControlCenterDaemon`, `Local\AntigravityControlCenterUI`), safe handle release, and working-set trimming intact so duplicate daemons do not spawn and silent upgrades can replace binaries cleanly.
+3. **Single-Instance & Low-Memory Tray:** Keep Windows Named Mutex checks (`Local\AntigravityControlCenterDaemon`, `Local\AntigravityControlCenterUI`), safe handle release, and working-set trimming intact.
 4. **No Hardcoded Secrets or Personal Paths in Git:** Never commit personal tokens, `accounts/` folders, `tokens_history.db`, `quotas_cache.json`, or hardcoded `C:\Users\<username>` paths.
 5. **Process & Timeout Discipline:** All HTTP/network/subprocess calls must use explicit timeouts and clean up background threads/processes deterministically.
-6. **Release & Updater Guardrails:**
-   - **Explicit Release Gate:** NEVER bump `version.APP_VERSION`, create git tags, or run `.\scripts\build_release.ps1 -Publish` unless explicitly requested by the user.
-   - **Fixed Inno Setup `AppId`:** Never change `AppId={{6E3A9B14-7C2D-4F8A-9B51-2D8E4C7A1F03}}` in `installer/AntigravityControlCenter.iss`, and never delete or modify `%USERPROFILE%\.gemini\antigravity-switcher` during install/uninstall.
-   - **Mutex & Security Parity:** Keep `DAEMON_MUTEX_NAME` / `UI_MUTEX_NAME` in `app.py` identical to `installer/AntigravityControlCenter.iss`, keep TLS verification enabled, enforce HTTPS + `TRUSTED_DOWNLOAD_HOSTS` on every redirect hop, verify SHA-256 via `hmac.compare_digest` before renaming `.part` -> `.exe`, and never accept installer paths from client HTTP requests.
-   - **Smart Local App Updates:** Skip rebuilds for docs-only edits (`README.md`, `AGENTS.md`, `LICENSE`). While iterating on quick UI/small tweaks, you may batch local rebuilds unless the user asks to test the installed app now. When finishing a feature or ready to apply locally (after verification & commit/push):
-     - For UI/static/script-only edits (`static/*` or companion `scripts/*`), run `.\scripts\build_release.ps1 -SkipTests -InstallLocal -StaticOnly` (~5s fast sync).
-     - For Python/code edits, run `.\scripts\build_release.ps1 -SkipTests -InstallLocal` (fast mirror sync without Inno Setup).
-   - **Smart Verification & 2-Word Publish Workflow (`publish update`):**
-     - **Quick / iterative edits:** Run targeted syntax checks (`python -m py_compile` / `node --check`) on touched files, then commit and push to `origin/main`. Never bump `version.py`, create tags, or run `-Publish`.
-     - **Critical changes (updater, DPAPI/auth, packaging, installer) or `"publish update"`:** Always run full guardrail tests (`$env:PYTHONPATH=".;tests"; python -m unittest test_release -v`). On `"publish update"`, if tag `v<APP_VERSION>` already exists on GitHub, auto-bump the patch version in `version.py`, run full tests, commit & push to `origin/main`, and run `.\scripts\build_release.ps1 -Publish`.
-7. **Auto-Commit & Push After Updates:** After completing and verifying any code or config update, stage the changed files (excluding secrets/state listed in rule 4), commit with a clear message, and push to `origin/main` automatically.
+6. **Explicit Release Gate & Smart Verification:** Never bump `version.APP_VERSION`, create git tags, or run `-Publish` unless the user explicitly says `"publish update"`. For quick/iterative edits, run targeted syntax checks (`python -m py_compile` / `node --check`) on touched files; always run full guardrail tests (`test_release`) for updater, DPAPI/auth, packaging, installer, or release changes.
+7. **Auto-Commit & Push:** After completing and verifying any code or config update, stage changed files (excluding secrets/state in rule 4), commit clearly, and push to `origin/main`.
